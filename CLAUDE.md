@@ -34,3 +34,4 @@ Skriv för en läsare som inte var med: en kollega eller en annan Claude utan ti
 - Ändringar som berör AI-anrop görs i `src/js/04-ai.js` (prompterna) och `src/js/00-standalone.js` (anropet till Anthropic API). Samma kod måste fungera både i artefakten och fristående.
 - Skriv aldrig patientuppgifter, riktiga API-nycklar eller andra hemligheter i repot eller i loggen.
 - Skriv inte modellidentifierare i commit-meddelanden.
+- `.claude/settings.json` sätter komprimeringsgränsen till 400 000 tokens (`autoCompactWindow`). Ändra den inte utan att fråga.
