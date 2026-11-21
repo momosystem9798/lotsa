@@ -211,6 +211,7 @@ const STANDALONE = (() => {
     if (e instanceof Anthropic.APIUserAbortError) return err('cancelled');
     if (e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError) return err('bad_key', e.message);
     if (e instanceof Anthropic.RateLimitError) return err('rate_limited', e.message);
+    if (e instanceof Anthropic.APIError && /credit balance|billing|purchase credits/i.test(String(e.message || ''))) return err('billing', e.message);
     if (e instanceof Anthropic.BadRequestError) {
       const msg = String(e.message || '');
       if (/prompt is too long|too many tokens|request_too_large/i.test(msg)) return err('prompt_too_large', msg);
@@ -247,7 +248,9 @@ const STANDALONE = (() => {
       return { text, truncated: msg.stop_reason === 'max_tokens', modelTierApplied: o.modelTier || 'quick' };
     } catch (e) {
       if (o.signal && o.signal.aborted) throw err('cancelled');
-      throw mapError(e, Anthropic);
+      const mapped = mapError(e, Anthropic);
+      console.warn('Lotsa AI-fel:', mapped.code, mapped.message);
+      throw mapped;
     }
   }
   const sample = (input, o) => run(input, o);

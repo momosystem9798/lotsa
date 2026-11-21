@@ -1874,6 +1874,7 @@ const STANDALONE = (() => {
     if (e instanceof Anthropic.APIUserAbortError) return err('cancelled');
     if (e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError) return err('bad_key', e.message);
     if (e instanceof Anthropic.RateLimitError) return err('rate_limited', e.message);
+    if (e instanceof Anthropic.APIError && /credit balance|billing|purchase credits/i.test(String(e.message || ''))) return err('billing', e.message);
     if (e instanceof Anthropic.BadRequestError) {
       const msg = String(e.message || '');
       if (/prompt is too long|too many tokens|request_too_large/i.test(msg)) return err('prompt_too_large', msg);
@@ -1910,7 +1911,9 @@ const STANDALONE = (() => {
       return { text, truncated: msg.stop_reason === 'max_tokens', modelTierApplied: o.modelTier || 'quick' };
     } catch (e) {
       if (o.signal && o.signal.aborted) throw err('cancelled');
-      throw mapError(e, Anthropic);
+      const mapped = mapError(e, Anthropic);
+      console.warn('Lotsa AI-fel:', mapped.code, mapped.message);
+      throw mapped;
     }
   }
   const sample = (input, o) => run(input, o);
@@ -2746,7 +2749,12 @@ function aiFail(e) {
     case 'offline': return 'Kunde inte nå AI-tjänsten. Kontrollera internetanslutningen och försök igen.';
     case 'sdk_load': return 'AI-biblioteket kunde inte laddas. Kontrollera internetanslutningen och ladda om sidan.';
     case 'images_unavailable': return 'Den här visningen kan inte skicka bilder till AI:n, så skannade sidor kan inte tolkas här.';
-    default: return AI_OFF_CODES.includes(code) ? 'AI-svar är inte tillgängliga här.' : 'AI-tjänsten svarade inte. Försök igen om en stund.';
+    default: {
+      if (AI_OFF_CODES.includes(code)) return 'AI-svar är inte tillgängliga här.';
+      /* Fristående läge: visa tjänstens eget felmeddelande så att felet går att felsöka. */
+      const detail = STANDALONE && e && e.message && e.message !== code ? ' (Fel från tjänsten: ' + trunc(String(e.message), 220) + ')' : '';
+      return 'AI-tjänsten svarade inte. Försök igen om en stund.' + detail;
+    }
   }
 }
 /* Plockar ut ett textfält ur JSON som fortfarande skrivs, så att svaret kan visas medan det kommer. */
