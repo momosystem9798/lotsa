@@ -430,7 +430,7 @@ V.installningar = {
           <div class="field"><label for="sStale">Varna när manualen är äldre än</label><select class="select" id="sStale" name="staleMonths">${[12, 24, 36, 48, 60].map(n => html`<option value="${n}" ${s.staleMonths === n ? 'selected' : ''}>${n} månader</option>`)}</select></div>
           <div class="field"><label for="sTier">AI-svar</label><select class="select" id="sTier" name="aiTier"><option value="quick" ${s.aiTier === 'quick' ? 'selected' : ''}>Snabba svar (rekommenderas)</option><option value="default" ${s.aiTier === 'default' ? 'selected' : ''}>Noggranna svar, tar längre tid</option></select><span class="hint">Oavsett val kontrolleras varje citat mot manualtexten.</span></div>
           <div class="field"><label for="sMin">Sparad tid per besvarad fråga</label><select class="select" id="sMin" name="minutesPerAnswer">${[3, 4, 5, 6, 8, 10, 15].map(n => html`<option value="${n}" ${s.minutesPerAnswer === n ? 'selected' : ''}>${n} minuter</option>`)}</select><span class="hint">Antagande bakom översiktens tidsbesparing.</span></div>
-          <div class="field"><label for="sUrl">Appens adress för QR-koder</label><input class="input" id="sUrl" name="baseUrl" value="${s.baseUrl || ARTIFACT_URL}" placeholder="https://claude.ai/..." inputmode="url"><span class="hint">Länken du delar till appen. QR-koderna pekar hit.</span></div></div></div>
+          <div class="field"><label for="sUrl">Appens adress för QR-koder</label><input class="input" id="sUrl" name="baseUrl" value="${s.baseUrl || ARTIFACT_URL}" placeholder="https://..." inputmode="url"><span class="hint">Länken du delar till appen. QR-koderna pekar hit.</span></div></div></div>
         <div class="rowflex"><button class="btn btn-primary">Spara inställningarna</button></div>
       </form>
       <div class="panel mt20" style="max-width:820px"><div class="panel-h"><h2 class="h3">Exempeldata</h2><span class="badge b-demo">Fiktiv</span></div>
@@ -438,8 +438,8 @@ V.installningar = {
         <p class="hint mt8">Stäng av när ni börjar med egna manualer. Exempeldatan ligger kvar och kan slås på igen.</p>
         <div class="rowflex mt14"><button class="btn" data-act="resetDemo">Återställ exempeldatan</button><button class="btn btn-danger" data-act="wipeOwn">Radera allt som lagts till</button></div></div>
       <div class="panel mt20" style="max-width:820px"><div class="panel-h"><h2 class="h3">Om den här visningen</h2></div>
-        <dl class="kv"><dt>Lagring</dt><dd>${S.live ? (S.readOnly ? 'Skrivskyddad. Ändringar gäller tills sidan stängs.' : 'Sparas mellan besök') : 'Ingen databas nås. Ändringar gäller tills sidan stängs.'}</dd>
-          <dt>AI-svar</dt><dd>${aiReady() ? 'Tillgängliga via ditt Claude-konto' : 'Inte tillgängliga här'}</dd>
+        <dl class="kv"><dt>Lagring</dt><dd>${STANDALONE && S.live ? 'Sparas i den här webbläsaren på den här datorn. Andra datorer har sin egen data.' : S.live ? (S.readOnly ? 'Skrivskyddad. Ändringar gäller tills sidan stängs.' : 'Sparas mellan besök') : 'Ingen databas nås. Ändringar gäller tills sidan stängs.'}</dd>
+          <dt>AI-svar</dt><dd>${STANDALONE ? html`${STANDALONE.hasKey() ? `Via Anthropic API med nyckeln ${STANDALONE.keyHint()}` : 'Ingen API-nyckel inlagd'} <button type="button" class="btn btn-s" data-act="apiKey">${STANDALONE.hasKey() ? 'Byt nyckel' : 'Lägg in nyckel'}</button>` : (aiReady() ? 'Tillgängliga via ditt Claude-konto' : 'Inte tillgängliga här')}</dd>
           <dt>Röstinmatning</dt><dd>${S.caps.dictation ? 'Tillgänglig' : 'Inte tillgänglig i den här webbläsaren eller appen. Använd tangentbordets mikrofon.'}</dd>
           <dt>Nedladdning</dt><dd>${S.caps.downloads ? 'Tillgänglig' : 'Inte tillgänglig här'}</dd>
           <dt>Roller</dt><dd>Rollbytet i menyn är ett demoläge. I en skarp tjänst styrs rollen av inloggningen.</dd></dl></div>`);
