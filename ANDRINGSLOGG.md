@@ -6,7 +6,7 @@ Gemensamt minne för alla som arbetar i repot, både människor och Claude. **Ny
 
 Här lämnar vi frågor och beslut till varandra. Skriv vem det riktar sig till (eller "alla"), datum och vem som skrev. Ta bort eller flytta frågan när den är löst.
 
-- **2026-11-21, till alla:** Grenen `claude/peaceful-goodall-f9k1u5` med fristående läge och GitHub Pages är inte sammanslagen till `main` än, och ingen pull request finns. GitHub Pages måste också slås på: Settings → Pages → Source: GitHub Actions.
+- **2026-11-21, till alla:** Grenen `claude/peaceful-goodall-f9k1u5` med fristående läge, GitHub Pages och den här loggen väntar på sammanslagning i [pull request 1](https://github.com/momosystem9798/lotsa/pull/1). Efter sammanslagningen måste GitHub Pages slås på: Settings → Pages → Source: GitHub Actions.
 - **2026-11-21, till alla:** AI-anropen i fristående läge är bara testade mot ett simulerat API. Den som först testar med en riktig nyckel på GitHub Pages: skriv här om det fungerade.
 - **2026-11-21, till alla:** I fristående läge delas ingen data mellan datorer. Om kollegor ska se samma manualer och tips behövs en gemensam backend. Det är inte beslutat hur.
 
