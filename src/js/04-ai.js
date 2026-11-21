@@ -39,7 +39,12 @@ function aiFail(e) {
     case 'offline': return 'Kunde inte nå AI-tjänsten. Kontrollera internetanslutningen och försök igen.';
     case 'sdk_load': return 'AI-biblioteket kunde inte laddas. Kontrollera internetanslutningen och ladda om sidan.';
     case 'images_unavailable': return 'Den här visningen kan inte skicka bilder till AI:n, så skannade sidor kan inte tolkas här.';
-    default: return AI_OFF_CODES.includes(code) ? 'AI-svar är inte tillgängliga här.' : 'AI-tjänsten svarade inte. Försök igen om en stund.';
+    default: {
+      if (AI_OFF_CODES.includes(code)) return 'AI-svar är inte tillgängliga här.';
+      /* Fristående läge: visa tjänstens eget felmeddelande så att felet går att felsöka. */
+      const detail = STANDALONE && e && e.message && e.message !== code ? ' (Fel från tjänsten: ' + trunc(String(e.message), 220) + ')' : '';
+      return 'AI-tjänsten svarade inte. Försök igen om en stund.' + detail;
+    }
   }
 }
 /* Plockar ut ett textfält ur JSON som fortfarande skrivs, så att svaret kan visas medan det kommer. */

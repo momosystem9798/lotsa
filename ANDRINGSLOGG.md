@@ -23,6 +23,17 @@ Här lämnar vi frågor och beslut till varandra. Skriv vem det riktar sig till 
 
 ---
 
+## 2026-11-21 – Tydligare AI-fel i fristående läge
+**Gren:** `claude/peaceful-goodall-f9k1u5` · **Av:** Claude-session på uppdrag av repots ägare
+**Vad:**
+- `src/js/00-standalone.js`: Anthropic svarar med fel 400 och "credit balance is too low" när kontot saknar krediter. Det känns nu igen som kreditfel. Alla AI-fel loggas också i webbläsarens konsol som `Lotsa AI-fel: <kod> <meddelande>`.
+- `src/js/04-ai.js`: vid okända fel i fristående läge visas tjänstens eget felmeddelande efter standardtexten, "(Fel från tjänsten: …)".
+- `test/run.mjs`: testet `fristaende` täcker nu också kreditfel och okända 400-fel.
+
+**Varför:** Ägaren lade in en riktig nyckel på GitHub Pages och fick bara "AI-tjänsten svarade inte", som inte gick att felsöka. Det var det första testet mot det riktiga API:et.
+**Testat:** Alla 18 Playwright-tester gick igenom. Den egentliga orsaken till ägarens fel är inte känd än: nästa försök visar den.
+**Kvar att göra / att veta:** Be ägaren försöka igen och läsa felmeddelandet. Trolig orsak: kontot saknar krediter.
+
 ## 2026-11-21 – Appen publicerad på GitHub Pages
 **Gren:** `main` (ingen kodändring, bara den här posten via `claude/peaceful-goodall-f9k1u5`) · **Av:** Claude-session på uppdrag av repots ägare
 **Vad:** Ägaren slog på GitHub Pages (Source: GitHub Actions). Arbetsflödet "Publicera på GitHub Pages" startades för hand (körning 3) och alla steg lyckades, även `deploy-pages`. Appen finns på **https://momosystem9798.github.io/lotsa/** och publiceras om vid varje push till `main`.
