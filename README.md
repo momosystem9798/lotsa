@@ -38,6 +38,10 @@ Om API-nyckeln:
 
 För skarp drift med delad data och utan nycklar hos användarna behövs en egen backend, se nästa avsnitt.
 
+## Samarbete
+
+Flera personer arbetar i repot med var sin Claude. Läs `ANDRINGSLOGG.md` för de senaste ändringarna och öppna frågor, och `CLAUDE.md` för arbetssättet. Loggen uppdateras vid varje ändring.
+
 ## Bygga
 
 Kräver Node 18 eller senare.
