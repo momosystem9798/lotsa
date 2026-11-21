@@ -33,6 +33,11 @@ function aiFail(e) {
     case 'prompt_too_large': return 'Underlaget blev för stort. Välj en enhet eller ställ en snävare fråga.';
     case 'image_rejected': return 'Bilden kunde inte läsas. Prova en annan fil.';
     case 'invalid_json': case 'empty_completion': return 'AI:n gav ett svar som inte gick att tolka. Försök igen.';
+    case 'no_key': return 'AI-svar kräver en API-nyckel. Lägg in den under Inställningar eller via rutan högst upp.';
+    case 'bad_key': return 'API-nyckeln godtogs inte. Kontrollera den under Inställningar.';
+    case 'billing': return 'API-kontot saknar krediter. Fyll på i Claude Console och försök igen.';
+    case 'offline': return 'Kunde inte nå AI-tjänsten. Kontrollera internetanslutningen och försök igen.';
+    case 'sdk_load': return 'AI-biblioteket kunde inte laddas. Kontrollera internetanslutningen och ladda om sidan.';
     case 'images_unavailable': return 'Den här visningen kan inte skicka bilder till AI:n, så skannade sidor kan inte tolkas här.';
     default: return AI_OFF_CODES.includes(code) ? 'AI-svar är inte tillgängliga här.' : 'AI-tjänsten svarade inte. Försök igen om en stund.';
   }

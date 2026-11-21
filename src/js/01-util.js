@@ -1,8 +1,8 @@
 'use strict';
 /* ===== Lotsa: grundfunktioner ===== */
 const DEMO = window.LOTSA_DEMO || { devices: [], manuals: [], tips: [], flags: [], reports: [], stats: null };
-/* Artefaktens adress. Används i QR-koder. Kan ändras under Inställningar. */
-const ARTIFACT_URL = 'https://claude.ai/artifact/Ld1mdvoVqrePFL7QeFHrdD';
+/* Appens adress (artefakten, eller sidan själv i fristående läge). Används i QR-koder. Kan ändras under Inställningar. */
+const ARTIFACT_URL = STANDALONE && /^https?:$/.test(location.protocol) ? location.href.split('#')[0] : 'https://claude.ai/artifact/Ld1mdvoVqrePFL7QeFHrdD';
 const BRAND = 'Lotsa';
 
 const $ = (s, r = document) => r.querySelector(s);

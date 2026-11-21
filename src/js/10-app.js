@@ -30,8 +30,39 @@ function drawShell() {
     else if (!S.live) b = 'Den här visningen har ingen lagring. Det du lägger till finns kvar tills sidan stängs.';
     else if (S.readOnly) b = 'Skrivskyddad visning. Det du lägger till finns kvar tills sidan stängs.';
   }
-  setHTML($('#banner'), b ? html`<div class="banner" role="status">${icon('info')}<span>${b}</span></div>` : '');
+  const keyBtn = STANDALONE && S.ready && !b && !STANDALONE.hasKey() && !S.prefs.keyBannerHidden;
+  if (keyBtn) b = 'AI-svar är avstängda tills en API-nyckel för Claude läggs in. Manualer, larmkoder och snabbkort fungerar ändå.';
+  setHTML($('#banner'), b ? html`<div class="banner" role="status">${icon('info')}<span>${b}</span>${keyBtn ? html`<button class="btn btn-s" data-act="apiKey">Lägg in nyckel</button><button class="btn btn-s btn-quiet" data-act="hideKeyBanner">Inte nu</button>` : ''}</div>` : '');
 }
+
+/* ----- Fristående läge: API-nyckel för AI-svar ----- */
+ACT.apiKey = () => {
+  if (!STANDALONE) return;
+  const has = STANDALONE.hasKey();
+  modal(html`<form data-form="apiKey">
+    <div class="modal-h"><h2 class="h2">API-nyckel för AI-svar</h2><button type="button" class="btn btn-icon btn-quiet" data-act="closeOverlay" aria-label="Stäng">${icon('x')}</button></div>
+    <div class="modal-b">
+      <p>Utanför Claude hämtar ${BRAND} sina AI-svar direkt från Anthropic API. Skapa en nyckel i Claude Console (console.anthropic.com) och klistra in den här.</p>
+      <p class="hint mt8">Nyckeln sparas bara i den här webbläsaren och skickas bara till Anthropic. Varje person och dator behöver en egen. Använd en nyckel med en låg kostnadsgräns och lägg inte in den på delade datorer.</p>
+      <div class="field mt14"><label for="akKey">API-nyckel</label><input class="input" id="akKey" name="key" type="password" autocomplete="off" spellcheck="false" placeholder="${has ? STANDALONE.keyHint() : 'sk-ant-...'}"></div>
+    </div>
+    <div class="modal-f">${has ? html`<button type="button" class="btn btn-danger" data-act="apiKeyClear">Ta bort nyckeln</button>` : ''}<button type="button" class="btn" data-act="closeOverlay">Avbryt</button><button class="btn btn-primary">Spara</button></div>
+  </form>`);
+};
+function applyKey() {
+  S.caps.sample = STANDALONE.hasKey() ? STANDALONE.sample : null;
+  S.aiOff = false; S.aiNote = '';
+  closeAllOverlays(); render();
+}
+FORM.apiKey = f => {
+  const key = String(formData(f).key || '').trim();
+  if (!key) { toast('Klistra in nyckeln först.', 'crit'); return; }
+  if (!/^sk-ant-/.test(key)) { toast('Det ser inte ut som en API-nyckel från Anthropic. Den börjar med sk-ant-.', 'crit'); return; }
+  if (!STANDALONE.setKey(key)) { toast('Nyckeln kunde inte sparas i den här webbläsaren.', 'crit'); return; }
+  applyKey(); toast('Nyckeln är sparad. AI-svar är påslagna.');
+};
+ACT.apiKeyClear = () => { STANDALONE.setKey(''); applyKey(); toast('Nyckeln är borttagen.'); };
+ACT.hideKeyBanner = () => { S.prefs.keyBannerHidden = true; savePrefs(); render(); };
 function render() {
   drawShell();
   const el = $('#view');

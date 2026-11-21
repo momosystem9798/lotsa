@@ -1,12 +1,21 @@
-import { chromium } from '/opt/npm-tools/node_modules/playwright/index.mjs';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { execFileSync } from 'node:child_process';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
-const DIST = 'file:///home/claude/lotsa/dist/index.html';
-const SHOTS = '/home/claude/lotsa/test/shots';
+/* Sökvägar räknas från testmappen. Playwright och Chrome kan pekas ut med PLAYWRIGHT och CHROME. */
+const TEST = dirname(fileURLToPath(import.meta.url)), ROOT = dirname(TEST);
+const { chromium } = await import(process.env.PLAYWRIGHT || 'playwright').catch(() => import('/opt/npm-tools/node_modules/playwright/index.mjs'));
+const DIST = pathToFileURL(join(ROOT, 'dist/index.html')).href;
+const SHOTS = join(TEST, 'shots');
 mkdirSync(SHOTS, { recursive: true });
-const nm = p => '/home/claude/lotsa/test/node_modules/' + p;
+const nm = p => join(TEST, 'node_modules', p);
+/* Anthropic-SDK:n hämtas från jsDelivr i webbläsaren. I testerna buntas samma version lokalt. */
+const SDK_BUNDLE = nm('.cache/anthropic-sdk.mjs');
+if (!existsSync(SDK_BUNDLE)) execFileSync(nm('.bin/esbuild'), [nm('@anthropic-ai/sdk/index.mjs'), '--bundle', '--format=esm', '--platform=browser', '--log-level=warning', '--outfile=' + SDK_BUNDLE]);
 const LIB = [
+  [/jsdelivr.*@anthropic-ai\/sdk/, SDK_BUNDLE],
   [/pdf\.worker\.min\.js/, nm('pdfjs-dist/build/pdf.worker.min.js')],
   [/pdf\.min\.js/, nm('pdfjs-dist/build/pdf.min.js')],
   [/jspdf\.umd\.min\.js/, nm('jspdf/dist/jspdf.umd.min.js')],
@@ -31,22 +40,23 @@ async function makePdf() {
     lines.forEach((t, i) => page.drawText(t, { x: 40, y: 540 - i * 26, size: i === 0 ? 18 : 11, font }));
   }
   const bytes = await doc.save();
-  writeFileSync('/home/claude/lotsa/test/testpump.pdf', bytes);
+  writeFileSync(join(TEST, 'testpump.pdf'), bytes);
 }
 
-async function open(browser, { mock = {}, noClaude = false, viewport = { width: 1280, height: 860 }, theme = '', hash = '' } = {}) {
-  const ctx = await browser.newContext({ viewport, deviceScaleFactor: 1, colorScheme: theme === 'dark' ? 'dark' : 'light' });
+async function open(browser, { mock = {}, noClaude = false, viewport = { width: 1280, height: 860 }, theme = '', hash = '', api = null, ctx: given = null } = {}) {
+  const ctx = given || await browser.newContext({ viewport, deviceScaleFactor: 1, colorScheme: theme === 'dark' ? 'dark' : 'light' });
   const page = await ctx.newPage();
   page.on('console', m => { if (m.type() === 'error' && !/ERR_FAILED/.test(m.text())) errors.push('console: ' + m.text()); });
   page.on('pageerror', e => errors.push('pageerror: ' + e.message + '\n' + (e.stack || '').split('\n').slice(0, 4).join('\n')));
   await page.route(/^https?:\/\//, route => {
     const url = route.request().url();
-    for (const [re, file] of LIB) if (re.test(url) && existsSync(file)) return route.fulfill({ path: file, contentType: 'text/javascript' });
+    if (api && /api\.anthropic\.com/.test(url)) return api(route);
+    for (const [re, file] of LIB) if (re.test(url) && existsSync(file)) return route.fulfill({ path: file, contentType: 'text/javascript', headers: { 'access-control-allow-origin': '*' } });
     if (/fonts\.googleapis/.test(url)) return route.fulfill({ body: '', contentType: 'text/css' });
     return route.abort();
   });
   await page.exposeFunction('__saveFile', (name, b64) => { writeFileSync(SHOTS + '/' + name.replace(/[^\w.-]+/g, '_'), Buffer.from(b64, 'base64')); return true; });
-  if (!noClaude) { await page.addInitScript(o => { window.__MOCK_OPTS = o; }, mock); await page.addInitScript({ path: '/home/claude/lotsa/test/mock.js' }); }
+  if (!noClaude) { await page.addInitScript(o => { window.__MOCK_OPTS = o; }, mock); await page.addInitScript({ path: join(TEST, 'mock.js') }); }
   await page.goto(DIST + hash);
   await page.waitForFunction(() => !document.querySelector('#view > .skel'), null, { timeout: 15000 });
   await page.waitForTimeout(150);
@@ -64,7 +74,8 @@ const txt = async (page, sel) => (await page.locator(sel).first().innerText()).t
 const go = async (page, hash) => { await page.evaluate(h => { location.hash = h; }, hash); await page.waitForTimeout(120); };
 
 await makePdf();
-const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox'] });
+const CHROME = process.env.CHROME || (existsSync('/usr/bin/google-chrome') ? '/usr/bin/google-chrome' : '');
+const browser = await chromium.launch(CHROME ? { executablePath: CHROME, args: ['--no-sandbox'] } : {});
 
 await test('hem-desktop', async () => {
   const { ctx, page } = await open(browser);
@@ -320,7 +331,7 @@ await test('uppladdning', async () => {
   await page.waitForTimeout(150);
   await go(page, '#manualer');
   await page.click('.page-head [data-act="upload"]');
-  await page.setInputFiles('#upFile', '/home/claude/lotsa/test/testpump.pdf');
+  await page.setInputFiles('#upFile', join(TEST, 'testpump.pdf'));
   await page.waitForSelector('.up-root .filecard', { timeout: 20000 });
   const sum = await txt(page, '.up-root .modal-b');
   expect(sum.includes('4 sidor'), 'fyra sidor lästa: ' + sum.slice(0, 200));
@@ -368,7 +379,7 @@ await test('uppladdning', async () => {
   await go(page, '#enhet-vac20');
   await page.click('[data-tab="manual"]');
   await page.click('#devPanel [data-act="upload"]');
-  await page.setInputFiles('#upFile', '/home/claude/lotsa/test/testpump.pdf');
+  await page.setInputFiles('#upFile', join(TEST, 'testpump.pdf'));
   await page.waitForSelector('.up-root .filecard', { timeout: 20000 });
   await page.click('[data-u="next"]');
   await page.waitForSelector('#upVer');
@@ -485,20 +496,20 @@ await test('pdf-utan-bakgrundstrad', async () => {
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));
   await page.route(/^https?:\/\//, route => {
     const url = route.request().url();
-    for (const [re, file] of LIB) if (re.test(url) && existsSync(file)) return route.fulfill({ path: file, contentType: 'text/javascript' });
+    for (const [re, file] of LIB) if (re.test(url) && existsSync(file)) return route.fulfill({ path: file, contentType: 'text/javascript', headers: { 'access-control-allow-origin': '*' } });
     if (/fonts\.googleapis/.test(url)) return route.fulfill({ body: '', contentType: 'text/css' });
     return route.abort();
   });
   await page.addInitScript(() => { window.Worker = class { constructor() {} postMessage() {} addEventListener() {} removeEventListener() {} terminate() {} }; });
   await page.addInitScript(o => { window.__MOCK_OPTS = o; }, {});
-  await page.addInitScript({ path: '/home/claude/lotsa/test/mock.js' });
+  await page.addInitScript({ path: join(TEST, 'mock.js') });
   await page.goto(DIST + '#manualer');
   await page.waitForFunction(() => !document.querySelector('#view > .skel'));
   await page.evaluate(() => { document.querySelector('.rail [data-role="admin"]').click(); });
   await page.waitForTimeout(200);
   await go(page, '#manualer');
   await page.click('.page-head [data-act="upload"]');
-  await page.setInputFiles('#upFile', '/home/claude/lotsa/test/testpump.pdf');
+  await page.setInputFiles('#upFile', join(TEST, 'testpump.pdf'));
   await page.waitForSelector('.up-root .filecard', { timeout: 30000 });
   expect((await txt(page, '.up-root .modal-b')).includes('4 sidor'), 'PDF läst i sidans egen tråd');
   await ctx.close();
@@ -574,7 +585,7 @@ await test('rundtur-mobil', async () => {
 
 await test('utan-claude', async () => {
   const { ctx, page } = await open(browser, { noClaude: true, hash: '#enhet-aer5' });
-  expect((await txt(page, '#banner')).includes('ingen lagring'), 'banner om lagring');
+  expect((await txt(page, '#banner')).includes('API-nyckel'), 'banner om API-nyckel');
   await page.click('.shortcut >> nth=0');
   await page.waitForSelector('.msg-a .a-actions');
   expect((await txt(page, '.msg-a')).includes('Förinspelat exempelsvar'), 'exempelsvar utan AI');
@@ -586,6 +597,74 @@ await test('utan-claude', async () => {
   await page.click('[data-tab="kort"]');
   await page.click('[data-act="cardPdf"]');
   await page.waitForTimeout(800);
+  await ctx.close();
+});
+
+/* Fristående läge: ingen Claude-miljö, lagring i webbläsaren och AI via Anthropic API (simulerat här). */
+const sse = (text, stop = 'end_turn') => {
+  const ev = (type, data) => `event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`;
+  const parts = [text.slice(0, Math.ceil(text.length / 2)), text.slice(Math.ceil(text.length / 2))];
+  return ev('message_start', { message: { id: 'msg_test', type: 'message', role: 'assistant', model: 'claude-opus-5-5', content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 10, output_tokens: 1 } } })
+    + ev('content_block_start', { index: 0, content_block: { type: 'text', text: '' } })
+    + parts.map(t => ev('content_block_delta', { index: 0, delta: { type: 'text_delta', text: t } })).join('')
+    + ev('content_block_stop', { index: 0 })
+    + ev('message_delta', { delta: { stop_reason: stop, stop_sequence: null }, usage: { output_tokens: 50 } })
+    + ev('message_stop', {});
+};
+const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': 'POST, OPTIONS' };
+await test('fristaende', async () => {
+  const reqs = [];
+  let status = 200;
+  const api = async route => {
+    const r = route.request();
+    if (r.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: CORS });
+    const body = r.postDataJSON(), h = await r.allHeaders();
+    reqs.push({ body, key: h['x-api-key'] || String(h.authorization || '').replace(/^Bearer /, ''), browser: h['anthropic-dangerous-direct-browser-access'], beta: h['anthropic-beta'] });
+    if (status !== 200) return route.fulfill({ status, headers: { ...CORS, 'content-type': 'application/json' }, body: JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } }) });
+    const last = body.messages[body.messages.length - 1].content.map(b => b.text || '').join('\n');
+    const out = /Ge sökord/.test(last) ? { sv: ['starta'], en: ['start'] }
+      : { status: 'besvarad', svar: 'Så här startar du pumpen:\n1. Anslut nätkabeln och kontrollera att nätlampan lyser. [1]', kallor: [{ n: 1, manual: 'M1', sida: 4, avsnitt: '3.2 Starta pumpen', citat: '1. Anslut nätkabeln och kontrollera att nätlampan lyser' }], kontakta_mt: false, mt_orsak: '', typ: 'procedur' };
+    return route.fulfill({ status: 200, headers: { ...CORS, 'content-type': 'text/event-stream' }, body: sse(JSON.stringify(out)) });
+  };
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 }, deviceScaleFactor: 1 });
+  let { page } = await open(browser, { noClaude: true, hash: '#enhet-flow300', api, ctx });
+  expect((await txt(page, '#banner')).includes('API-nyckel'), 'banner ber om nyckel');
+  await page.click('#banner [data-act="apiKey"]');
+  await page.fill('#akKey', 'inte-en-nyckel');
+  await page.click('.modal .btn-primary');
+  expect(await page.locator('.modal').count() === 1, 'felaktig nyckel avvisas');
+  await page.fill('#akKey', 'sk-ant-test-0000000000000000');
+  await page.click('.modal .btn-primary');
+  await page.waitForTimeout(150);
+  expect(await page.locator('#banner .banner').count() === 0, 'bannern försvinner när nyckeln finns');
+  await page.click('.shortcut >> nth=0');
+  await page.waitForSelector('.msg-a .a-actions', { timeout: 8000 });
+  expect((await txt(page, '.msg-a')).includes('Så här startar du pumpen'), 'svar från API visas');
+  expect((await txt(page, '.src')).includes('Citat kontrollerat'), 'citatet kontrolleras mot manualen');
+  const main = reqs.find(r => r.body.messages[0].content.length > 1);
+  expect(main && main.key === 'sk-ant-test-0000000000000000' && main.browser === 'true', 'nyckel och webbläsarhuvud skickas');
+  expect(main.body.model === 'claude-opus-5-5' && main.body.stream === true && main.body.fallbacks === 'default', 'modell, strömning och reservmodell: ' + JSON.stringify({ m: main.body.model, s: main.body.stream, f: main.body.fallbacks }));
+  expect(/server-side-fallback-2026-07-01/.test(main.beta || ''), 'beta-huvud för reservmodell');
+  expect(main.body.messages.length === 1 && main.body.messages[0].content[0].cache_control, 'två användarblock blir ett meddelande med cache på manualutdraget');
+  await page.screenshot({ path: SHOTS + '/37-fristaende.png' });
+  // inställning sparas i webbläsaren och finns kvar efter omladdning
+  await page.click('.rail [data-role="admin"]');
+  await go(page, '#installningar');
+  await page.fill('#sOrg', 'Fristående sjukhuset');
+  await page.click('form[data-form="settings"] .btn-primary');
+  await page.waitForTimeout(1200); /* rollvalet sparas med fördröjning */
+  await page.reload();
+  await page.waitForFunction(() => !document.querySelector('#view > .skel'), null, { timeout: 15000 });
+  await page.waitForTimeout(200);
+  expect((await page.inputValue('#sOrg')) === 'Fristående sjukhuset', 'inställningen finns kvar efter omladdning');
+  expect((await txt(page, '.kv')).includes('sk-ant-tes'), 'nyckeln finns kvar efter omladdning');
+  // nyckel som inte godtas
+  status = 401;
+  await go(page, '#enhet-flow300');
+  await page.fill('.composer textarea', 'Hur rengör jag pumpen?');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => /API-nyckeln godtogs inte/.test(document.body.innerText), null, { timeout: 8000 });
+  errors = errors.filter(e => !/status of 401/.test(e)); /* webbläsaren loggar det avsiktliga 401-svaret */
   await ctx.close();
 });
 

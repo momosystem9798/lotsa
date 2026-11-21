@@ -15,5 +15,9 @@
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^3.11.174",
     "qrcode-generator": "^1.4.4"
+  },
+  "devDependencies": {
+    "@anthropic-ai/sdk": "1.6.0",
+    "esbuild": "0.28.2"
   }
 }
