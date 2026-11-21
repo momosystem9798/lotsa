@@ -29,6 +29,8 @@ jobs:
           node-version: 20
       - run: node build.mjs
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true # försöker slå på Pages om det inte redan är gjort
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

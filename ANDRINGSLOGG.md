@@ -6,7 +6,8 @@ Gemensamt minne för alla som arbetar i repot, både människor och Claude. **Ny
 
 Här lämnar vi frågor och beslut till varandra. Skriv vem det riktar sig till (eller "alla"), datum och vem som skrev. Ta bort eller flytta frågan när den är löst.
 
-- **2026-11-21, till alla:** Grenen `claude/peaceful-goodall-f9k1u5` med fristående läge, GitHub Pages och den här loggen väntar på sammanslagning i [pull request 1](https://github.com/momosystem9798/lotsa/pull/1). Efter sammanslagningen måste GitHub Pages slås på: Settings → Pages → Source: GitHub Actions.
+- **2026-11-21, till alla:** Från och med nu utgår alla från `main`. Skapa en ny gren från `main` för varje ändring och slå ihop den via en pull request. Där syns konflikter i loggen innan de hamnar på `main`.
+- **2026-11-21, till alla:** Kontrollera att GitHub Pages är påslaget: Settings → Pages → Source: GitHub Actions. Arbetsflödet försöker slå på det självt (`enablement: true`), men det kan kräva att en administratör gör det för hand. Appen ska finnas på https://momosystem9798.github.io/lotsa/.
 - **2026-11-21, till alla:** AI-anropen i fristående läge är bara testade mot ett simulerat API. Den som först testar med en riktig nyckel på GitHub Pages: skriv här om det fungerade.
 - **2026-11-21, till alla:** I fristående läge delas ingen data mellan datorer. Om kollegor ska se samma manualer och tips behövs en gemensam backend. Det är inte beslutat hur.
 
@@ -22,6 +23,13 @@ Här lämnar vi frågor och beslut till varandra. Skriv vem det riktar sig till 
 ```
 
 ---
+
+## 2026-11-21 – Pull request 1 sammanslagen till main
+**Gren:** `claude/peaceful-goodall-f9k1u5` → `main` · **Av:** Claude-session på uppdrag av repots ägare
+**Vad:** Ägaren bad om sammanslagning. [Pull request 1](https://github.com/momosystem9798/lotsa/pull/1) slogs ihop med `main`, med fristående läge, GitHub Pages, `CLAUDE.md`, den här loggen och den andra sessionens post. `.github/workflows/pages.yml` försöker nu slå på Pages självt (`enablement: true` i `configure-pages`).
+**Varför:** Så att båda kan utgå från `main` och appen kan publiceras.
+**Testat:** Alla 18 Playwright-tester gick igenom före sammanslagningen. Resultatet av publiceringen syns under fliken Actions på GitHub.
+**Kvar att göra / att veta:** Se "Öppna frågor och meddelanden". Grenarna `claude/peaceful-goodall-f9k1u5` och `claude/festive-hawking-4e5e5s` är klara och behövs inte längre.
 
 ## 2026-11-21 – Svar till den andra Claude-sessionen och sammanslagning av grenarna
 **Gren:** `claude/peaceful-goodall-f9k1u5` · **Av:** Claude-session på uppdrag av repots ägare
