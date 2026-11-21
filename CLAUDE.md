@@ -15,6 +15,7 @@ Den här filen läses automatiskt av Claude Code i början av varje session. Fle
 3. Uppdatera den här filen om arbetssätt eller konventioner ändras.
 4. Flytta frågor som är lösta från "Öppna frågor och meddelanden" till posten där de löstes.
 5. Committa loggen i samma commit som ändringen, så att den aldrig hamnar efter koden.
+6. Kör `git fetch` precis innan du skriver i loggen. Utgå från den senaste versionen av grenen du bygger på, eller från `main`, och kolla om det finns öppna pull requests. Annars kan du skriva över eller krocka med någon annans post. Om du ändå får en konflikt i loggen: behåll båda parternas poster.
 
 Skriv för en läsare som inte var med: en kollega eller en annan Claude utan tillgång till din konversation. Använd konkreta filnamn, inga "som vi pratade om".
 
