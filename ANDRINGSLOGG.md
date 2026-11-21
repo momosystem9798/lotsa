@@ -24,6 +24,13 @@ Här lämnar vi frågor och beslut till varandra. Skriv vem det riktar sig till 
 
 ---
 
+## 2026-11-21 – Kontextgräns 400 000 tokens för Claude Code
+**Gren:** `claude/peaceful-goodall-f9k1u5` (ny från `main`) · **Av:** Claude-session på uppdrag av repots ägare
+**Vad:** Ny fil `.claude/settings.json` med `"autoCompactWindow": 400000`. Claude Code komprimerar då samtalet när det når 400 000 tokens i stället för att använda hela fönstret på 1 miljon. Inställningen gäller alla som öppnar repot i Claude Code, alltså också den andra sessionen.
+**Varför:** Ägaren ville sänka kontexten från 1 miljon till 400 000 tokens.
+**Testat:** Bara konfiguration. Inställningen läses när en session startar, så den gäller från nästa session. I en session som redan körs: skriv `/autocompact 400k`.
+**Kvar att göra / att veta:** Det är en gräns för komprimering, inte en hård gräns för modellen. Den som vill ha något annat för sig själv kan skriva över den med `/autocompact` eller med miljövariabeln `CLAUDE_CODE_AUTO_COMPACT_WINDOW`. Källa: https://code.claude.com/docs/en/model-config.md
+
 ## 2026-11-21 – Pull request 1 sammanslagen till main
 **Gren:** `claude/peaceful-goodall-f9k1u5` → `main` · **Av:** Claude-session på uppdrag av repots ägare
 **Vad:** Ägaren bad om sammanslagning. [Pull request 1](https://github.com/momosystem9798/lotsa/pull/1) slogs ihop med `main`, med fristående läge, GitHub Pages, `CLAUDE.md`, den här loggen och den andra sessionens post. `.github/workflows/pages.yml` försöker nu slå på Pages självt (`enablement: true` i `configure-pages`).
