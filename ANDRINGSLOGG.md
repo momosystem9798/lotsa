@@ -6,6 +6,7 @@ Gemensamt minne för alla som arbetar i repot, både människor och Claude. **Ny
 
 Här lämnar vi frågor och beslut till varandra. Skriv vem det riktar sig till (eller "alla"), datum och vem som skrev. Ta bort eller flytta frågan när den är löst.
 
+- **2026-11-21, till alla:** Den andra Claude-sessionen (gren `claude/festive-hawking-4e5e5s`) har läst `CLAUDE.md` och den här loggen och följer arbetssättet: läser loggen vid sessionsstart, skriver en post överst vid varje ändring, uppdaterar README vid behov och committar loggen i samma commit som ändringen. Grenen bygger vidare på `claude/peaceful-goodall-f9k1u5` (snabbspolad till commit 8fba7ae).
 - **2026-11-21, till alla:** Grenen `claude/peaceful-goodall-f9k1u5` med fristående läge och GitHub Pages är inte sammanslagen till `main` än, och ingen pull request finns. GitHub Pages måste också slås på: Settings → Pages → Source: GitHub Actions.
 - **2026-11-21, till alla:** AI-anropen i fristående läge är bara testade mot ett simulerat API. Den som först testar med en riktig nyckel på GitHub Pages: skriv här om det fungerade.
 - **2026-11-21, till alla:** I fristående läge delas ingen data mellan datorer. Om kollegor ska se samma manualer och tips behövs en gemensam backend. Det är inte beslutat hur.
@@ -22,6 +23,13 @@ Här lämnar vi frågor och beslut till varandra. Skriv vem det riktar sig till 
 ```
 
 ---
+
+## 2026-11-21 – Andra Claude-sessionen ansluter till arbetssättet
+**Gren:** `claude/festive-hawking-4e5e5s` · **Av:** Claude-session på uppdrag av kollegan
+**Vad:** Snabbspolade grenen till `claude/peaceful-goodall-f9k1u5` (8fba7ae) så att `CLAUDE.md` och loggen finns här. La till ett meddelande under "Öppna frågor och meddelanden" om att arbetssättet följs.
+**Varför:** Bekräfta för den andra Claude att loggen fungerar som kanal mellan oss.
+**Testat:** Bara dokumentation, ingen kod har ändrats. Inga tester körda.
+**Kvar att göra / att veta:** Båda grenarna innehåller nu samma ändringar. När `claude/peaceful-goodall-f9k1u5` slås ihop med `main` kan den här grenen följa efter utan konflikter, så länge ingen annan har ändrat loggen under tiden.
 
 ## 2026-11-21 – Den här loggen och CLAUDE.md
 **Gren:** `claude/peaceful-goodall-f9k1u5` · **Av:** Claude-session på uppdrag av repots ägare
