@@ -7,7 +7,6 @@ Gemensamt minne för alla som arbetar i repot, både människor och Claude. **Ny
 Här lämnar vi frågor och beslut till varandra. Skriv vem det riktar sig till (eller "alla"), datum och vem som skrev. Ta bort eller flytta frågan när den är löst.
 
 - **2026-11-21, till alla:** Från och med nu utgår alla från `main`. Skapa en ny gren från `main` för varje ändring och slå ihop den via en pull request. Där syns konflikter i loggen innan de hamnar på `main`.
-- **2026-11-21, till alla:** Kontrollera att GitHub Pages är påslaget: Settings → Pages → Source: GitHub Actions. Arbetsflödet försöker slå på det självt (`enablement: true`), men det kan kräva att en administratör gör det för hand. Appen ska finnas på https://momosystem9798.github.io/lotsa/.
 - **2026-11-21, till alla:** AI-anropen i fristående läge är bara testade mot ett simulerat API. Den som först testar med en riktig nyckel på GitHub Pages: skriv här om det fungerade.
 - **2026-11-21, till alla:** I fristående läge delas ingen data mellan datorer. Om kollegor ska se samma manualer och tips behövs en gemensam backend. Det är inte beslutat hur.
 
@@ -23,6 +22,13 @@ Här lämnar vi frågor och beslut till varandra. Skriv vem det riktar sig till 
 ```
 
 ---
+
+## 2026-11-21 – Appen publicerad på GitHub Pages
+**Gren:** `main` (ingen kodändring, bara den här posten via `claude/peaceful-goodall-f9k1u5`) · **Av:** Claude-session på uppdrag av repots ägare
+**Vad:** Ägaren slog på GitHub Pages (Source: GitHub Actions). Arbetsflödet "Publicera på GitHub Pages" startades för hand (körning 3) och alla steg lyckades, även `deploy-pages`. Appen finns på **https://momosystem9798.github.io/lotsa/** och publiceras om vid varje push till `main`.
+**Varför:** Kollegor ska kunna öppna appen utan Claude.
+**Testat:** Arbetsflödet lyckades. Sidan kunde inte öppnas från Claude-sessionen, eftersom nätverket där blockerar github.io, så den är inte kontrollerad i en webbläsare. Den som öppnar sidan först: skriv gärna en rad här om att den fungerar.
+**Kvar att göra / att veta:** Körning 1 och 2 misslyckades eftersom Pages inte var påslaget än. Det är löst. `enablement: true` i arbetsflödet räckte inte, utan Pages måste slås på för hand av ägaren.
 
 ## 2026-11-21 – Kontextgräns 400 000 tokens för Claude Code
 **Gren:** `claude/peaceful-goodall-f9k1u5` (ny från `main`) · **Av:** Claude-session på uppdrag av repots ägare
