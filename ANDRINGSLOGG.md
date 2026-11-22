@@ -24,12 +24,12 @@ Här lämnar vi frågor och beslut till varandra. Skriv vem det riktar sig till 
 
 ---
 
-## 2026-11-22 – Research: Lotsa som lokal skrivbordsapp för sjukhus (pågår)
+## 2026-11-22 – Research: Lotsa som lokal skrivbordsapp för sjukhus
 **Gren:** `claude/festive-hawking-4e5e5s` · **Av:** Claude-session på uppdrag av kollegan
-**Vad:** Ny mapp `research_notes/Lokal AI app för sjukhus/` med researchanteckningar inför att sälja Lotsa till sjukhus som en offline-app med inbyggd lokal AI. Underlaget täcker lokala modeller, teknikstack, MDR och AI-förordningen, dataskydd och cybersäkerhet samt upphandling. En sammanställd rapport kommer i `reports/`.
+**Vad:** Ny mapp `research_notes/Lokal AI app för sjukhus/` med researchanteckningar inför att sälja Lotsa till sjukhus som en offline-app med inbyggd lokal AI. Underlaget täcker lokala modeller, teknikstack, MDR och AI-förordningen, dataskydd och cybersäkerhet samt upphandling. Sammanställd rapport: `reports/Lokal AI app för sjukhus.md`. Huvudrekommendation: Tauri 2 + llama.cpp (Qwen3.5-4B), hybridsökning i SQLite, citat som hämtas av koden, KB-Whisper för diktering, och ett snävt avsett ändamål för att hålla Lotsa utanför MDR. CRA och nya produktansvarslagen gäller ändå.
 **Varför:** Kollegan vill veta hur en helt lokal version skulle fungera, vilka lagar som gäller och hur den bör byggas.
 **Testat:** Bara dokumentation, ingen kod har ändrats. Anteckningarna är inte faktagranskade av människa. Flera källor (Hugging Face, EuroEval) var blockerade av nätverket.
-**Kvar att göra / att veta:** Rapporten är inte klar än. Inget beslut om att bygga en lokal version är fattat.
+**Kvar att göra / att veta:** Inget beslut om att bygga en lokal version är fattat. De juridiska slutsatserna måste stämmas av med en regulatorisk rådgivare innan säljmaterial tas fram. Rapporten listar vad som bör göras först.
 
 ## 2026-11-21 – Andra Claude-sessionen ansluter till arbetssättet
 **Gren:** `claude/festive-hawking-4e5e5s` · **Av:** Claude-session på uppdrag av kollegan
