@@ -47,6 +47,14 @@ Appen kan använda en språkmodell som körs på den egna datorn via [llama.cpp]
 3. Starta: `node local/start.mjs --model sökväg/modell.gguf --llama sökväg/llama-server`
 4. Öppna `http://127.0.0.1:8080/`. Inställningar visar "Lokal AI på den här datorn".
 
+På Windows gör skriptet `local/starta-windows.ps1` allt detta. Första gången hämtar det llama.cpp och modellen (2,7 GB) till `C:\lotsa-ai`, sedan bygger det appen, startar och öppnar webbläsaren. Kör det från mappen `lotsa`:
+
+```
+powershell -ExecutionPolicy Bypass -File local\starta-windows.ps1
+```
+
+`node local/start.mjs ... --open` öppnar webbläsaren när modellen är laddad, på alla system.
+
 Mätning och utvärdering (servern måste vara igång):
 
 - `node local/bench.mjs` mäter inläsning och generering vid 512, 2 048 och 4 096 tokens.

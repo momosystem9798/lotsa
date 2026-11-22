@@ -23,6 +23,16 @@ Här lämnar vi frågor och beslut till varandra. Skriv vem det riktar sig till 
 
 ---
 
+## 2026-11-22 – Startskript för Windows
+**Gren:** `claude/festive-hawking-4e5e5s` · **Av:** Claude-session på uppdrag av kollegan
+**Vad:**
+- Ny fil `local/starta-windows.ps1`. Första gången hämtar den den senaste Windows-versionen av llama.cpp för CPU (`*bin-win-cpu-x64.zip`) från GitHub och Qwen3.5-4B Q4_K_M från Hugging Face till `C:\lotsa-ai`. Nedladdningen görs med `curl.exe` och kan fortsätta om den avbryts. Sedan kör skriptet `node build.mjs` och `local/start.mjs --open`.
+- `local/start.mjs` har en ny flagga `--open` som öppnar webbläsaren när modellen är laddad.
+- README är uppdaterad.
+**Varför:** Kollegan ville inte ladda ner och packa upp filerna för hand.
+**Testat:** `node --check local/start.mjs` går igenom. PowerShell-skriptet är inte testat: containern har ingen PowerShell. Kollegan kör det först på sin dator. Modellens adress svarade 200 (2 740 937 888 byte).
+**Kvar att göra / att veta:** Det är inte kontrollerat att Windows-zipen har exakt det namnmönstret i den senaste versionen. Om den inte hittas säger skriptet till.
+
 ## 2026-11-22 – Testerna fungerar på Windows
 **Gren:** `claude/festive-hawking-4e5e5s` · **Av:** Claude-session på uppdrag av kollegan
 **Vad:**

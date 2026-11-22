@@ -2,7 +2,7 @@
 // Allt körs på den egna datorn och bara på 127.0.0.1. Inget går ut på nätet.
 //
 //   node local/start.mjs --model sökväg/till/modell.gguf [--llama sökväg/till/llama-server]
-//                        [--port 8080] [--ctx 4096] [--threads 4]
+//                        [--port 8080] [--ctx 4096] [--threads 4] [--open]
 //
 // Sökvägarna kan också anges med miljövariablerna LOTSA_MODEL och LLAMA_SERVER.
 // Det här är prototypens startskript. I skrivbordsappen (Tauri) gör skalet samma sak.
@@ -20,6 +20,7 @@ const port = arg('port', '8080');
 const ctx = arg('ctx', '4096');
 /* Fysiska kärnor ger bäst fart. Utan uppgift används antalet logiska kärnor, högst 8. */
 const threads = arg('threads', String(Math.min(8, cpus().length)));
+const openBrowser = process.argv.includes('--open'); /* öppna webbläsaren när modellen är laddad */
 const dist = join(ROOT, 'dist');
 
 if (!model || !existsSync(model)) { console.error('Ange modellfilen med --model eller LOTSA_MODEL. Hittade inte: ' + (model || '(ingen)')); process.exit(1); }
@@ -45,5 +46,15 @@ for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => child.kill(sig));
 const url = `http://127.0.0.1:${port}`;
 for (let i = 0; i < 600; i++) {
   await new Promise(r => setTimeout(r, 1000));
-  try { const r = await fetch(url + '/health'); if (r.ok) { console.log(`\nLotsa är redo: öppna ${url}/ i webbläsaren.\n`); break; } } catch (e) { /* laddar fortfarande */ }
+  try {
+    const r = await fetch(url + '/health');
+    if (r.ok) {
+      console.log(`\nLotsa är redo: öppna ${url}/ i webbläsaren. Stäng av med Ctrl+C.\n`);
+      if (openBrowser) {
+        const [cmd, a] = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url + '/']] : process.platform === 'darwin' ? ['open', [url + '/']] : ['xdg-open', [url + '/']];
+        spawn(cmd, a, { stdio: 'ignore', detached: true }).on('error', () => {}).unref();
+      }
+      break;
+    }
+  } catch (e) { /* laddar fortfarande */ }
 }
