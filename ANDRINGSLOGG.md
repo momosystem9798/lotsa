@@ -23,6 +23,18 @@ Här lämnar vi frågor och beslut till varandra. Skriv vem det riktar sig till 
 
 ---
 
+## 2026-11-22 – Fas 0: prototyp med lokal AI (llama.cpp)
+**Gren:** `claude/festive-hawking-4e5e5s` · **Av:** Claude-session på uppdrag av kollegan
+**Vad:**
+- `src/js/00-standalone.js`: nytt lokalt AI-läge. Om appen serveras från 127.0.0.1 av llama-server (eller `localStorage["lotsa:localAi"]` pekar på en sådan) går alla AI-anrop till `/v1/chat/completions` där, med strömning, JSON-schema, låg temperatur och tänkläget avstängt. Bilder stöds inte (ingen OCR lokalt än).
+- `src/js/04-ai.js`: `askLocal()` med "extrahera först": manualerna delas i stycken (`chunksOf`), de bästa styckena väljs med BM25 upp till `LOCAL_BUDGET` = 6000 tecken, och schemat tvingar modellen att först skriva belägg (`utdrag`-id + ordagrant citat) och sedan svaret. Beläggen görs om till vanliga källor och kontrolleras med `verifyQuote` som förut. Nya felkoder `local_offline` och `local_loading`. Med `?eval=1` exponeras `window.__lotsaEval` för utvärderingsskriptet.
+- `src/js/07-admin.js`, `10-app.js`, `08-files.js`: ingen nyckelbanner i lokalt läge, Inställningar visar lokal modell, OCR-knappen döljs lokalt.
+- Ny mapp `local/`: `start.mjs` (startar llama-server som också serverar `dist/`), `bench.mjs` (hastighetsmätning), `eval.mjs` (kör testmängden via appens frågeflöde), `testset/fragor-v0.json` (30 frågor om exempelmanualerna: 21 besvarbara, 6 obesvarbara, 3 kliniska som ska avböjas), `resultat/`.
+- `test/run.mjs`: nytt test `lokal` mot en simulerad llama-server.
+**Varför:** Fas 0 i `reports/Lotsa lokal AI fullständig plan.md`: visa att tekniken håller på vanlig hårdvara.
+**Testat:** Alla 19 Playwright-tester gick igenom. Riktig körning med llama.cpp (byggd från källkod) och Qwen3.5-4B Q4_K_M på en molnserver med 4 vCPU och 16 GB: se `local/resultat/bench-molnserver-4vcpu-Qwen3.5-4B-Q4_K_M.md`. Inläsning 62–85 tokens/s, generering bara 5–7 tokens/s, alltså 45–130 s per svar. Utvärderingen av testmängden pågår och läggs till i en senare commit.
+**Kvar att göra / att veta:** Genereringen är flaskhalsen på svag hårdvara. Nästa steg: kortare svar, Qwen3.5-2B och Gemma-4-E4B, och mätning på riktiga sjukhusdatorer. Appen hämtar fortfarande pdf.js, jsPDF och QR-bibliotek från CDN, som måste paketeras in för riktig offline-drift. Ingen Tauri-paketering än (fas 1).
+
 ## 2026-11-22 – Ny, fördjupad research: fullständig plan för lokal Lotsa
 **Gren:** `claude/festive-hawking-4e5e5s` · **Av:** Claude-session på uppdrag av kollegan
 **Vad:** Ny mapp `research_notes/Lotsa lokal AI fullständig plan/` med sju researchspår (modeller och hårdvara, RAG/PDF/kvalitet, paketering och utrullning, MDR och tillverkarmanualer inkl. upphovsrätt, AI-förordningen/CRA/produktansvar, dataskydd och regionkrav, marknad och upphandling). Görs om med öppnat nätverk eftersom den förra researchen hade många blockerade källor. Rapport: `reports/Lotsa lokal AI fullständig plan.md` (ersätter i praktiken `reports/Lokal AI app för sjukhus.md`). Slutsats: det går, om modellen hålls i 2–4B-klassen med högst cirka 2 000 tokens underlag, citaten kontrolleras av kod, ändamålet hålls snävt (då sannolikt inte MDR, men CRA och nya produktansvarslagen gäller) och appen levereras som signerad MSI som regionens IT uppdaterar. Plan i fyra faser med tre go/no-go-beslut fram till CRA-kravet 11 dec 2027.

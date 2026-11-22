@@ -50,7 +50,7 @@ async function open(browser, { mock = {}, noClaude = false, viewport = { width: 
   page.on('pageerror', e => errors.push('pageerror: ' + e.message + '\n' + (e.stack || '').split('\n').slice(0, 4).join('\n')));
   await page.route(/^https?:\/\//, route => {
     const url = route.request().url();
-    if (api && /api\.anthropic\.com/.test(url)) return api(route);
+    if (api && /api\.anthropic\.com|127\.0\.0\.1:9999/.test(url)) return api(route);
     for (const [re, file] of LIB) if (re.test(url) && existsSync(file)) return route.fulfill({ path: file, contentType: 'text/javascript', headers: { 'access-control-allow-origin': '*' } });
     if (/fonts\.googleapis/.test(url)) return route.fulfill({ body: '', contentType: 'text/css' });
     return route.abort();
@@ -681,6 +681,47 @@ await test('fristaende', async () => {
   await page.waitForFunction(() => /Fel från tjänsten: .*testfel/.test(document.body.innerText), null, { timeout: 8000 });
   /* webbläsaren loggar de avsiktliga felsvaren */
   errors = errors.filter(e => !/status of 40[01]/.test(e));
+  await ctx.close();
+});
+
+/* Skrivbordsversionen: appen hittar en lokal llama-server och skickar frågan dit, aldrig till internet. */
+await test('lokal', async () => {
+  const reqs = [], other = [];
+  const api = async route => {
+    const r = route.request(), u = r.url();
+    if (/api\.anthropic\.com/.test(u)) { other.push(u); return route.abort(); }
+    if (r.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: CORS });
+    if (u.endsWith('/props')) return route.fulfill({ status: 200, headers: { ...CORS, 'content-type': 'application/json' }, body: JSON.stringify({ model_path: '/modeller/Testmodell-4B-Q4_K_M.gguf', default_generation_settings: { n_ctx: 4096 } }) });
+    const body = r.postDataJSON();
+    reqs.push(body);
+    const text = body.messages.map(m => m.content).join('\n');
+    const id = (text.match(/\[(U\d+)\] Infusionspump Flow 300, sida 4\b/) || [])[1] || 'U1';
+    const out = { belagg: [{ utdrag: id, citat: 'Anslut nätkabeln och kontrollera att nätlampan lyser' }], status: 'besvarad', svar: 'Så här startar du pumpen:\n1. Anslut nätkabeln och kontrollera att nätlampan lyser. [1]', kontakta_mt: false, mt_orsak: '', typ: 'procedur' };
+    const js = JSON.stringify(out), half = Math.ceil(js.length / 2);
+    const ev = d => 'data: ' + JSON.stringify({ choices: [{ delta: { content: d }, finish_reason: null }] }) + '\n\n';
+    const end = 'data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] }) + '\n\ndata: [DONE]\n\n';
+    return route.fulfill({ status: 200, headers: { ...CORS, 'content-type': 'text/event-stream' }, body: ev(js.slice(0, half)) + ev(js.slice(half)) + end });
+  };
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 }, deviceScaleFactor: 1 });
+  await ctx.addInitScript(() => { try { localStorage.setItem('lotsa:localAi', 'http://127.0.0.1:9999'); } catch (e) { /* inget */ } });
+  const { page } = await open(browser, { noClaude: true, hash: '#enhet-flow300', api, ctx });
+  expect(!(await txt(page, '#banner').catch(() => '')).includes('API-nyckel'), 'ingen banner om API-nyckel i lokalt läge');
+  await page.click('.shortcut >> nth=0');
+  await page.waitForSelector('.msg-a .a-actions', { timeout: 8000 });
+  expect((await txt(page, '.msg-a')).includes('Så här startar du pumpen'), 'svar från den lokala AI:n visas');
+  expect((await txt(page, '.src')).includes('Citat kontrollerat'), 'citatet kontrolleras mot manualen');
+  const main = reqs[reqs.length - 1];
+  const schema = main.response_format && main.response_format.json_schema && main.response_format.json_schema.schema;
+  expect(schema && schema.properties.belagg.items.properties.utdrag.enum.length > 0, 'JSON-schema med tillåtna utdrag skickas');
+  expect(Object.keys(schema.properties)[0] === 'belagg', 'beläggen skrivs före svaret (extrahera först)');
+  expect(main.chat_template_kwargs && main.chat_template_kwargs.enable_thinking === false && main.stream === true, 'tänkläge av och strömning på');
+  const sent = main.messages.map(m => m.content).join('\n');
+  expect(sent.length < 12000, 'underlaget hålls kort för en liten modell: ' + sent.length + ' tecken');
+  expect(other.length === 0, 'inga anrop till Anthropic');
+  await page.screenshot({ path: SHOTS + '/38-lokal.png' });
+  await page.click('.rail [data-role="admin"]');
+  await go(page, '#installningar');
+  expect((await txt(page, '.kv')).includes('Lokal AI på den här datorn (Testmodell-4B-Q4_K_M)'), 'inställningarna visar den lokala modellen');
   await ctx.close();
 });
 

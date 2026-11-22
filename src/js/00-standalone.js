@@ -257,12 +257,113 @@ const STANDALONE = (() => {
   sample.json = async (input, o) => parseJson((await run(input, o)).text);
   sample.limits = async () => ({ maxPromptBytes: 3000000, images: { maxCount: 4, maxInputBytes: 5000000, mediaTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] } });
 
+  /* ----- Lokal AI: en språkmodell som körs på den egna datorn via llama.cpp (llama-server) -----
+     Skrivbordsversionen startar llama-server på 127.0.0.1 och låter den servera appen. Då finns
+     AI:n på samma adress som sidan och inget lämnar datorn. Adressen kan också anges för hand
+     (localStorage "lotsa:localAi"), till exempel http://127.0.0.1:8080 vid test. */
+  const LOCAL_NAME = 'lotsa:localAi';
+  const local = { base: null, model: '', ctx: 0 };
+  async function probeLocal() {
+    const manual = ls.get(LOCAL_NAME);
+    const sameOrigin = /^https?:$/.test(location.protocol) && /^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname) ? location.origin : null;
+    for (const base of [manual, sameOrigin].filter(Boolean)) {
+      try {
+        const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 2500);
+        const r = await fetch(base.replace(/\/$/, '') + '/props', { signal: ctl.signal });
+        clearTimeout(t);
+        if (!r.ok) continue;
+        const p = await r.json();
+        if (!p || !p.default_generation_settings) continue; /* inte llama-server */
+        local.base = base.replace(/\/$/, '');
+        local.model = String(p.model_alias || p.model_path || '').split(/[\\/]/).pop().replace(/\.gguf$/i, '');
+        local.ctx = Number(p.default_generation_settings.n_ctx) || 0;
+        return true;
+      } catch (e) { /* ingen lokal server här */ }
+    }
+    return false;
+  }
+  /* Läser OpenAI-formatets strömmade svar (server-sent events) och ger texten bit för bit. */
+  async function readStream(res, onDelta) {
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    let buf = '', text = '', finish = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+        if (!line.startsWith('data:')) continue;
+        const data = line.slice(5).trim();
+        if (data === '[DONE]') continue;
+        let j; try { j = JSON.parse(data); } catch (e) { continue; }
+        if (j.error) throw err('local_error', j.error.message || String(j.error));
+        const c = j.choices && j.choices[0];
+        if (!c) continue;
+        const d = (c.delta && c.delta.content) || '';
+        if (d) { text += d; onDelta(d, text); }
+        if (c.finish_reason) finish = c.finish_reason;
+      }
+    }
+    return { text, finish };
+  }
+  async function runLocal(input, o = {}) {
+    if (o.images && o.images.length) throw err('images_unavailable');
+    if (!local.base) throw err('local_offline');
+    const list = Array.isArray(input) ? input : [{ role: 'user', content: String(input) }];
+    const messages = [];
+    for (const m of list) {
+      const role = m.role === 'assistant' ? 'assistant' : 'user', last = messages[messages.length - 1];
+      if (last && last.role === role) last.content += '\n\n' + String(m.content); else messages.push({ role, content: String(m.content) });
+    }
+    const body = {
+      messages, stream: true, temperature: 0.1, top_p: 0.9,
+      max_tokens: o.maxTokens || 1500,
+      cache_prompt: true,
+      /* Tänkläget stängs av: det tar för lång tid på en vanlig dator utan grafikkort. */
+      chat_template_kwargs: { enable_thinking: false }
+    };
+    /* Med ett JSON-schema tvingar llama.cpp modellen att skriva giltig JSON i den ordningen. */
+    if (o.schema) body.response_format = { type: 'json_schema', json_schema: { name: 'svar', schema: o.schema } };
+    else if (o.json) body.response_format = { type: 'json_object' };
+    let res;
+    try {
+      res = await fetch(local.base + '/v1/chat/completions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: o.signal });
+    } catch (e) {
+      if (o.signal && o.signal.aborted) throw err('cancelled');
+      throw err('local_offline', String(e && e.message || e));
+    }
+    if (!res.ok) {
+      let msg = '';
+      try { const j = await res.json(); msg = (j.error && (j.error.message || j.error)) || ''; } catch (e) { /* inget JSON */ }
+      msg = String(msg || res.status);
+      if (res.status === 503) throw err('local_loading', msg);
+      if (/context|n_ctx|too long|exceeds/i.test(msg)) throw err('prompt_too_large', msg);
+      throw err('local_error', msg);
+    }
+    try {
+      const { text, finish } = await readStream(res, (delta, snapshot) => { if (o.onText) { try { o.onText({ text: snapshot, delta }); } catch (e) { /* visning */ } } });
+      if (!text.trim()) throw err('empty_completion');
+      return { text, truncated: finish === 'length', modelTierApplied: 'local' };
+    } catch (e) {
+      if (o.signal && o.signal.aborted) throw err('cancelled');
+      if (e && e.code) { console.warn('Lotsa lokal AI-fel:', e.code, e.message); throw e; }
+      throw err('local_error', String(e && e.message || e));
+    }
+  }
+  const localSample = (input, o) => runLocal(input, o);
+  localSample.json = async (input, o) => parseJson((await runLocal(input, { ...o, json: true })).text);
+  localSample.limits = async () => ({ maxPromptBytes: 60000, images: { maxCount: 0, maxInputBytes: 0, mediaTypes: [] } });
+  localSample.local = true;
+
   const caps = { db: null, user, sample: ls.get(KEY_NAME) ? sample : null, downloads, dictation: makeDictation() };
-  const dbReady = makeDb().then(d => { caps.db = d; });
+  const dbReady = Promise.all([makeDb().then(d => { caps.db = d; }), probeLocal().then(ok => { if (ok) caps.sample = localSample; })]);
   window.claude = { use: name => dbReady.then(() => caps[name] || null) };
 
   return {
     sample,
+    isLocal: () => !!local.base,
+    localInfo: () => ({ ...local }),
     hasKey: () => !!ls.get(KEY_NAME),
     keyHint: () => { const k = ls.get(KEY_NAME) || ''; return k ? k.slice(0, 10) + '…' + k.slice(-4) : ''; },
     setKey: k => ls.set(KEY_NAME, String(k || '').trim()),

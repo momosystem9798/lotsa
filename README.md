@@ -38,6 +38,22 @@ Om API-nyckeln:
 
 För skarp drift med delad data och utan nycklar hos användarna behövs en egen backend, se nästa avsnitt.
 
+## Lokal AI (prototyp för skrivbordsversionen)
+
+Appen kan använda en språkmodell som körs på den egna datorn via [llama.cpp](https://github.com/ggml-org/llama.cpp). Då lämnar inga frågor datorn.
+
+1. Bygg eller hämta `llama-server` från llama.cpp och ladda ner en modell i GGUF-format, till exempel `Qwen3.5-4B-Q4_K_M.gguf` (Apache 2.0).
+2. Bygg appen: `node build.mjs`
+3. Starta: `node local/start.mjs --model sökväg/modell.gguf --llama sökväg/llama-server`
+4. Öppna `http://127.0.0.1:8080/`. Inställningar visar "Lokal AI på den här datorn".
+
+Mätning och utvärdering (servern måste vara igång):
+
+- `node local/bench.mjs` mäter inläsning och generering vid 512, 2 048 och 4 096 tokens.
+- `node local/eval.mjs` kör `local/testset/fragor-v0.json` genom appens frågeflöde. Kräver Playwright (sätt `PLAYWRIGHT` till dess `index.mjs` om den inte finns i `test/node_modules`).
+
+Resultaten hamnar i `local/resultat/`. I lokalt läge finns ingen OCR av skannade sidor än.
+
 ## Samarbete
 
 Flera personer arbetar i repot med var sin Claude. Läs `ANDRINGSLOGG.md` för de senaste ändringarna och öppna frågor, och `CLAUDE.md` för arbetssättet. Loggen uppdateras vid varje ändring.

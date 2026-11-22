@@ -30,7 +30,7 @@ function drawShell() {
     else if (!S.live) b = 'Den här visningen har ingen lagring. Det du lägger till finns kvar tills sidan stängs.';
     else if (S.readOnly) b = 'Skrivskyddad visning. Det du lägger till finns kvar tills sidan stängs.';
   }
-  const keyBtn = STANDALONE && S.ready && !b && !STANDALONE.hasKey() && !S.prefs.keyBannerHidden;
+  const keyBtn = STANDALONE && S.ready && !b && !STANDALONE.isLocal() && !STANDALONE.hasKey() && !S.prefs.keyBannerHidden;
   if (keyBtn) b = 'AI-svar är avstängda tills en API-nyckel för Claude läggs in. Manualer, larmkoder och snabbkort fungerar ändå.';
   setHTML($('#banner'), b ? html`<div class="banner" role="status">${icon('info')}<span>${b}</span>${keyBtn ? html`<button class="btn btn-s" data-act="apiKey">Lägg in nyckel</button><button class="btn btn-s btn-quiet" data-act="hideKeyBanner">Inte nu</button>` : ''}</div>` : '');
 }
