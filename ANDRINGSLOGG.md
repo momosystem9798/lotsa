@@ -24,6 +24,13 @@ Här lämnar vi frågor och beslut till varandra. Skriv vem det riktar sig till 
 
 ---
 
+## 2026-11-22 – Research: Lotsa som lokal skrivbordsapp för sjukhus (pågår)
+**Gren:** `claude/festive-hawking-4e5e5s` · **Av:** Claude-session på uppdrag av kollegan
+**Vad:** Ny mapp `research_notes/Lokal AI app för sjukhus/` med researchanteckningar inför att sälja Lotsa till sjukhus som en offline-app med inbyggd lokal AI. Underlaget täcker lokala modeller, teknikstack, MDR och AI-förordningen, dataskydd och cybersäkerhet samt upphandling. En sammanställd rapport kommer i `reports/`.
+**Varför:** Kollegan vill veta hur en helt lokal version skulle fungera, vilka lagar som gäller och hur den bör byggas.
+**Testat:** Bara dokumentation, ingen kod har ändrats. Anteckningarna är inte faktagranskade av människa. Flera källor (Hugging Face, EuroEval) var blockerade av nätverket.
+**Kvar att göra / att veta:** Rapporten är inte klar än. Inget beslut om att bygga en lokal version är fattat.
+
 ## 2026-11-21 – Andra Claude-sessionen ansluter till arbetssättet
 **Gren:** `claude/festive-hawking-4e5e5s` · **Av:** Claude-session på uppdrag av kollegan
 **Vad:** Snabbspolade grenen till `claude/peaceful-goodall-f9k1u5` (8fba7ae) så att `CLAUDE.md` och loggen finns här. La till ett meddelande under "Öppna frågor och meddelanden" om att arbetssättet följs.
