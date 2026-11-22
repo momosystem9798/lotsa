@@ -8,6 +8,8 @@
 param([string]$Mapp = 'C:\lotsa-ai')
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+# Äldre Windows PowerShell använder annars en gammal TLS-version som GitHub inte godtar.
+try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
 $repo = Split-Path -Parent $PSScriptRoot
 $llamaDir = Join-Path $Mapp 'llama'
 $model = Join-Path $Mapp 'Qwen3.5-4B-Q4_K_M.gguf'
