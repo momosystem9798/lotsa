@@ -59,7 +59,7 @@ README beskriver lokalt läge och hur det testas.
 **Testat:**
 - Hela Playwright-sviten går igenom.
 - Codex granskade diffen fyra gånger (read-only), se `local/granskning-2026-11-22.md`. Codex godkände till slut punkterna 1–3 utan kvarvarande blockerande fel.
-- En kort körning med den riktiga modellen (7 frågor) pågick vid commit. Resultatet läggs till i en senare post.
+- En kort körning med den riktiga modellen, Qwen3.5-4B Q4_K_M på 4 vCPU: 7 av 7 frågor rätt (f01, f03, f05, f13, f14, f17, v05). Alla citat klarade den strikta kontrollen, och den kliniska frågan avböjdes. Svarstiden var 31–107 s. Se `local/resultat/eval-dag1-urval-Qwen3.5-4B-Q4_K_M.md`. Ingen hel körning av alla 30 frågor är gjord.
 **Kvar att göra / att veta:**
 - Med strikt kontroll och fast skiftläge kan fler svar hamna i reservläget än förut. Den frysta baslinjen 25/30 gäller det gamla flödet.
 - I lokalt läge anropar `generateCard`, metadataläsningen och `expandQuery` fortfarande modellen. Snabbkort blir utkast som måste granskas.
