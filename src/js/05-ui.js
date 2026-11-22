@@ -281,6 +281,20 @@ function usedLine(r) {
   return html`<span>${show.length ? 'Bygger på ' + show.map(m => `${m.title || 'bruksanvisning'}, ${verLine(m)}`).join(' och ') : `Sökte i ${ms.length} manualer`}</span>
     ${show.some(m => stale.includes(m)) ? html`<span class="badge b-warn">${icon('clock')}Manualen är äldre än ${S.settings.staleMonths} månader</span>` : ''}`;
 }
+/* Lokalt läge: manualens egna stycken visas ordagrant, med det kontrollerade citatet markerat.
+   Ett klick öppnar sidan i manualen. */
+function excerptTpl(r) {
+  if (!r.utdrag || !r.utdrag.length) return r.svar ? html`<p>${r.svar}</p>` : '';
+  return html`<div class="excerpts"><div class="sources-h">Ur manualen, ordagrant</div>${r.utdrag.map(u => {
+    const k = r.kallor.find(x => x.utdrag === u.id);
+    /* Citaten markeras på sina egna platser i utdraget, i textordning och utan överlapp. */
+    const marks = (u.marks || []).slice().sort((a, b) => a.start - b.start).filter((x, i, l) => !i || x.start >= l[i - 1].end);
+    const parts = []; let at = 0;
+    marks.forEach(x => { parts.push(u.text.slice(at, x.start), html`<mark>${u.text.slice(x.start, x.end)}</mark>`); at = x.end; });
+    parts.push(u.text.slice(at));
+    return html`<button class="fallback-hit excerpt" data-act="openPage" data-m="${u.manualId}" data-p="${u.page}" data-s="${k ? k.range.start : ''}" data-e="${k ? k.range.end : ''}"><strong>${u.device}, sida ${u.page}${u.section ? ', ' + u.section : ''}</strong><span class="excerpt-text">${parts}</span></button>`;
+  })}<p class="hint">Lotsa har inte bedömt om utdragen besvarar hela frågan. Läs i manualen innan du agerar.</p></div>`;
+}
 function answerTpl(m) {
   const r = m.res;
   const dev = (m.deviceId && deviceById(m.deviceId)) || (r.kallor[0] && deviceById(r.kallor[0].deviceId)) || null;
@@ -291,12 +305,12 @@ function answerTpl(m) {
   const okTips = dev ? tips().filter(t => t.deviceId === dev.id && t.status === 'approved').length : 0;
   return html`
     ${m.example ? html`<div><span class="badge b-demo">Förinspelat exempelsvar</span></div>` : ''}
-    ${r.status === 'saknas' ? html`<div class="a-status saknas">${icon('search-x')}Det står inte i manualen</div>` : ''}
+    ${r.status === 'saknas' ? html`<div class="a-status saknas">${icon('search-x')}${r.excerpt ? 'Hittade inget svar' : 'Det står inte i manualen'}</div>` : ''}
     ${r.status === 'avvisad' ? html`<div class="a-status avvisad">${icon('shield')}Ingen klinisk bedömning</div>` : ''}
-    ${svar ? html`<div class="a-body">${renderAnswer(svar, m.id)}</div>` : ''}
-    ${r.status === 'delvis' ? html`<div class="notice warn">${icon('info')}<div>Manualen besvarar bara en del av frågan.</div></div>` : ''}
+    ${r.excerpt ? excerptTpl(r) : svar ? html`<div class="a-body">${renderAnswer(svar, m.id)}</div>` : ''}
+    ${r.status === 'delvis' && !r.excerpt ? html`<div class="notice warn">${icon('info')}<div>Manualen besvarar bara en del av frågan.</div></div>` : ''}
     ${r.unverified ? html`<div class="notice warn">${icon('warn')}<div><strong>Svaret är inte styrkt med citat</strong>Inget citat kunde kontrolleras mot manualtexten. Läs i manualen innan du agerar.</div></div>` : ''}
-    ${r.mt ? mtCard(dev, { why: r.mtWhy, tried: steps }) : (r.status === 'saknas' && dev && !r.noManual ? mtCard(dev, { soft: true, why: 'Manualen ger inget svar. Fråga MT eller tillverkarens support.' }) : '')}
+    ${r.mt ? mtCard(dev, { why: r.mtWhy, tried: steps }) : (r.status === 'saknas' && dev && !r.noManual ? mtCard(dev, { soft: true, why: r.excerpt ? 'Lotsa hittade inget svar i de sökta avsnitten. Läs i manualen eller fråga MT.' : 'Manualen ger inget svar. Fråga MT eller tillverkarens support.' }) : '')}
     ${r.kallor.length ? html`<div class="sources"><div class="sources-h">Källor ur manualen</div>${r.kallor.map(k => srcTpl(m, k, multi))}</div>` : ''}
     <div class="a-meta">${usedLine(r)}${okTips ? html`<button class="linkbtn" data-act="devTab" data-id="${dev.id}" data-tab="tips">${okTips} lokala tips finns för enheten</button>` : ''}</div>
     <div class="a-actions">
@@ -304,7 +318,7 @@ function answerTpl(m) {
       <button class="btn btn-s btn-icon ${m.fb === -1 ? 'is-on' : ''}" data-act="fb" data-mid="${m.id}" data-v="-1" aria-label="Dåligt svar" aria-pressed="${m.fb === -1}">${icon('thumb-down', 'ic-s')}</button>
       <button class="btn btn-s ${m.flagged ? 'is-on' : ''}" data-act="flag" data-mid="${m.id}" ${m.flagged ? 'disabled' : ''}>${icon('flag', 'ic-s')}${m.flagged ? 'Flaggat' : 'Flagga fel'}</button>
       <span class="sp"></span>
-      ${steps.length > 1 ? html`<button class="btn btn-s btn-primary" data-act="stepsMsg" data-mid="${m.id}">${icon('steps', 'ic-s')}Steg för steg</button>` : ''}
+      ${steps.length > 1 && !r.excerpt ? html`<button class="btn btn-s btn-primary" data-act="stepsMsg" data-mid="${m.id}">${icon('steps', 'ic-s')}Steg för steg</button>` : ''}
       ${!m.example && r.tier === 'quick' && aiReady() && r.status !== 'avvisad' && !r.noManual ? html`<button class="btn btn-s" data-act="deeper" data-mid="${m.id}">Noggrannare svar</button>` : ''}
       <button class="btn btn-s btn-icon" data-act="copyMsg" data-mid="${m.id}" aria-label="Kopiera svaret">${icon('copy', 'ic-s')}</button>
     </div>`;
@@ -367,7 +381,7 @@ function embeddedCode(text, deviceId) {
   if (text.trim().split(/\s+/).length > 9) return '';
   const cands = text.match(/[A-Za-zÅÄÖåäö]{1,4}[-\s]?\d{1,4}[A-Za-z]?(?![\wåäö])/g) || [];
   const devs = deviceId ? [deviceById(deviceId)].filter(Boolean) : devices();
-  for (const c of cands) if (devs.some(d => matchAlarm((manualFor(d) || {}).alarms, c))) return c.trim();
+  for (const c of cands) if (devs.some(d => matchAlarm(alarmsOf(manualFor(d)), c))) return c.trim();
   return '';
 }
 async function ask(key, text, { kind = '', tier = '', shortcut = false } = {}) {

@@ -59,15 +59,15 @@ function detectLang(text) {
 const LANG = { sv: 'svenska', en: 'engelska', '': 'okänt språk' };
 
 /* ----- Citatkontroll: finns AI:ns citat ordagrant i manualtexten? ----- */
-function normMap(text, alnumOnly) {
+function normMap(text, alnumOnly, keepCase) {
   let s = '', map = [], space = true;
   for (let i = 0; i < text.length; i++) {
-    let c = text[i].toLowerCase();
+    let c = keepCase ? text[i] : text[i].toLowerCase();
     if (c === '­') continue;
     if (/\s/.test(c)) { if (!alnumOnly && !space) { s += ' '; map.push(i); space = true; } continue; }
     if ('“”„«»'.includes(c)) c = '"';
     else if ('’‘´`'.includes(c)) c = "'";
-    else if ('–—−‑'.includes(c)) c = '-';
+    else if ((keepCase ? '–—‑' : '–—−‑').includes(c)) c = '-'; /* i strikt läge är minustecknet − eget */
     if (alnumOnly && !/[a-z0-9åäöéüæø]/.test(c)) continue;
     s += c; map.push(i); space = false;
   }
@@ -84,6 +84,28 @@ function findQuote(pageText, quote) {
     if (Q.length < 6) continue;
     const i = P.s.indexOf(Q);
     if (i >= 0) return { start: P.map[i], end: P.map[i + Q.length - 1] + 1 };
+  }
+  return null;
+}
+/* Strikt kontroll för den lokala AI:n: citatet måste stå som ett sammanhängande spann i texten
+   och börja och sluta på ordgräns. Bara blanksteg, citattecken och bindestreck (inte minustecknet)
+   jämnas ut. Skiftläge, siffror, decimaltecken, enheter (mA är inte MA),
+   skiljetecken och negationer måste stämma tecken för tecken, så "15 m" godtas inte för
+   "1,5 m" och "får användas" inte för "får inte användas". Med from/to godtas bara en träff
+   inom det fönstret, men ordgränserna kontrolleras ändå mot hela texten. */
+function strictSpan(text, quote, from = 0, to = Infinity) {
+  if (!text || !quote) return null;
+  let Q = normMap(String(quote), false, true).s.trim().replace(/^["'\s]+|["'\s]+$/g, '');
+  if (Q.split(' ').length < 3 || Q.replace(/[^\p{L}\p{N}]/gu, '').length < 12) return null;
+  const P = normMap(text, false, true), s = P.s;
+  for (const q of [Q]) {
+    for (let i = s.indexOf(q); i >= 0; i = s.indexOf(q, i + 1)) {
+      const b = s[i - 1], a = s[i + q.length], a2 = s[i + q.length + 1];
+      const before = b === undefined || /[\s"'(\[«]/.test(b);
+      const after = a === undefined || /[\s"')\]»;:!?]/.test(a) || (/[.,]/.test(a) && !/[0-9]/.test(a2 || ''));
+      const st = P.map[i], en = P.map[i + q.length - 1] + 1;
+      if (before && after && st >= from && en <= to) return { start: st, end: en };
+    }
   }
   return null;
 }

@@ -68,7 +68,7 @@ INPUT.omni = el => {
   if (!q) { setHTML(out, ''); return; }
   const low = q.toLowerCase();
   const hits = devices().filter(d => [d.name, d.manufacturer, d.model, d.dept, d.inventoryNo].join(' ').toLowerCase().includes(low)).slice(0, 4);
-  const codeHits = looksLikeCode(q) ? devices().map(d => ({ d, hit: matchAlarm((manualFor(d) || {}).alarms, q) })).filter(x => x.hit) : [];
+  const codeHits = looksLikeCode(q) ? devices().map(d => ({ d, hit: matchAlarm(alarmsOf(manualFor(d)), q) })).filter(x => x.hit) : [];
   setHTML(out, html`<div class="omni-sug">
     ${codeHits.map(x => html`<button data-act="omniCode" data-code="${q}" data-id="${x.d.id}">${icon('bell')}<span><strong class="code">${x.hit.key}</strong> ${x.hit.entry.label || ''}</span><span class="sub">${x.d.name}</span></button>`)}
     ${looksLikeCode(q) && !codeHits.length ? html`<button data-act="omniCode" data-code="${q}">${icon('bell')}<span>Slå upp larmkoden <strong class="code">${q.toUpperCase()}</strong></span><span class="sub">Alla enheter</span></button>` : ''}
@@ -256,7 +256,7 @@ ACT.cardApprove = async el => {
 /* Larmkoder på enhetssidan */
 function alarmPanel(d, m) {
   if (!m) return noManualTpl(d);
-  const entries = Object.entries(m.alarms || {});
+  const entries = Object.entries(alarmsOf(m));
   return html`<div data-alarmbox>
     <form class="alarm-form" data-form="alarm" data-scope="${d.id}" data-out="alOut-${d.id}">
       <div class="field"><label for="al-${d.id}">Larm- eller felkod</label><input class="input alarm-input" id="al-${d.id}" name="code" placeholder="t.ex. ${entries.length ? entries[0][0] : 'E-23'}" autocomplete="off" autocapitalize="characters" spellcheck="false" required></div>
@@ -410,8 +410,8 @@ function drawAlarmChips() {
   if (!el) return;
   const d = UI.alarmDev && deviceById(UI.alarmDev);
   let chips = [];
-  if (d) chips = Object.keys((manualFor(d) || {}).alarms || {}).map(k => ({ k, dev: d.id }));
-  else if (S.settings.demoMode) chips = [{ k: 'E-23', dev: '' }, { k: 'T-112', dev: '' }, { k: 'F5', dev: '' }, { k: 'Err 11', dev: '' }, { k: 'V-215', dev: '' }].filter(c => devices().some(x => matchAlarm((manualFor(x) || {}).alarms, c.k)));
+  if (d) chips = Object.keys(alarmsOf(manualFor(d))).map(k => ({ k, dev: d.id }));
+  else if (S.settings.demoMode) chips = [{ k: 'E-23', dev: '' }, { k: 'T-112', dev: '' }, { k: 'F5', dev: '' }, { k: 'Err 11', dev: '' }, { k: 'V-215', dev: '' }].filter(c => devices().some(x => matchAlarm(alarmsOf(manualFor(x)), c.k)));
   setHTML(el, chips.length ? html`<span class="small muted">${d ? 'Koder i manualen' : 'Prova till exempel'}</span>${chips.map(c => html`<button class="codechip" data-act="codechip" data-code="${c.k.split('–')[0]}" data-dev="${c.dev}">${c.k}</button>`)}` : '');
 }
 CHANGE.alarmScope = el => { UI.alarmDev = el.value; drawAlarmChips(); };
@@ -458,7 +458,7 @@ function drawNightOut() {
   const m = manualFor(d), k = NIGHT.mode;
   if (!k || !m) { setHTML(out, ''); return; }
   if (k === 'alarm') {
-    const keys = Object.keys(m.alarms || {});
+    const keys = Object.keys(alarmsOf(m));
     setHTML(out, html`<div data-alarmbox><form class="alarm-form" style="grid-template-columns:minmax(0,1fr) auto" data-form="alarm" data-scope="${d.id}" data-out="nAl">
         <div class="field"><label for="nCode">Larm- eller felkod på displayen</label><input class="input alarm-input" id="nCode" name="code" placeholder="t.ex. ${keys[0] || 'E-23'}" autocomplete="off" autocapitalize="characters" spellcheck="false" required></div>
         <button class="btn btn-primary btn-lg" style="min-height:84px">Slå upp</button></form>

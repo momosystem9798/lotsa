@@ -99,3 +99,26 @@ Fråga: vilka 3 saker skulle du göra först om vi bara har en arbetsdag, och ä
 3. Inför strikt spannkontroll och lås beteendet med regressionstest för MR-negationen, decimalen och avbruten JSON.
 
 Det jag skulle flytta fram är **nätverksgränsen och larmvägen**. Prestandamätning och översättning kan vänta tills de är säkrade.
+
+## Genomförandet av första arbetsdagen (omgång 3–6)
+
+Claude genomförde punkterna 1–3, och Codex granskade diffen fyra gånger (read-only) tills alla tre var godkända.
+
+**Omgång 3: Codex godkände inte.** Den hittade sju brister:
+1. De lokala anropen följde omdirigeringar. En omdirigering kan föra frågan och utdragen vidare till en annan server.
+2. Serverns fria feltext kunde visas i reservläget.
+3. Äldre AI-tolkade larmposter (`ai: true`) visades fortfarande.
+4. Modellens `kontakta_mt` styrde MT-kortet.
+5. Rutan "Manualen besvarar bara en del av frågan" var ett okontrollerat påstående.
+6. Spannkontrollen jämställde `mA` med `MA` och tog bort citatets sluttecken. `localSample.json` godtog avbruten generering och plockade ut JSON ur skräptext.
+7. Citatet markerades om på hela sidan, så upprepade citat kunde få fel markering.
+
+Allt åtgärdades.
+
+**Omgång 4: punkt 1 godkänd.** Två fynd återstod. Ett "saknas"-svar uppmanade till MT-kontakt, och "Steg för steg" plockade ut steg ur sitt sammanhang. Dessutom godtogs `MA` för `mA` i början av ett citat, och `−` jämställdes med `-`. Det åtgärdades.
+
+**Omgång 5: punkt 2 godkänd.** Ett gränsfall återstod: ett utdrag som kapades mitt i "1,5" gav "minst 1" som kontrollerat citat. Ordgränserna kontrolleras nu mot hela sidan, och långa stycken kapas bara vid radbrytning eller blanksteg.
+
+**Omgång 6: punkt 3 godkänd.** Inga blockerande fel återstår.
+
+Det som återstår till fas 1 står i ändringsloggen (posten 2026-11-22 "Lokal AI: första arbetsdagen").

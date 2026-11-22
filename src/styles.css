@@ -384,6 +384,9 @@ img,svg{max-width:100%}
 @keyframes pulse{50%{box-shadow:0 0 0 8px rgba(198,40,40,.18)}}
 .fallback-hit{display:grid;gap:6px;padding:12px 14px;border:1px solid var(--paper-line);border-radius:3px;background:var(--paper);color:var(--paper-ink);text-align:left;width:100%}
 .fallback-hit strong{font-size:15px}
+.excerpts{display:grid;gap:8px}
+.excerpt-text{white-space:pre-line}
+.excerpt mark{background:var(--marker);color:var(--marker-ink);padding:1px 2px;border-radius:2px}
 .fallback-hit span{font-size:14.5px;line-height:1.45}
 
 /* ---------- Manualsida (papper) ---------- */

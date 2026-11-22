@@ -54,6 +54,16 @@ Mätning och utvärdering (servern måste vara igång):
 
 Resultaten hamnar i `local/resultat/`. I lokalt läge finns ingen OCR av skannade sidor än.
 
+Så fungerar lokalt läge (prototyp, inte för pilot än):
+
+- Lokalt läge gäller när sidan serveras från den egna datorn (127.0.0.1, localhost eller [::1]), eller när `localStorage["lotsa:localAi"]` är `http://127.0.0.1:<port>` eller `http://[::1]:<port>`. Andra adresser ignoreras.
+- I lokalt läge används aldrig Anthropic API, inte ens om en nyckel är sparad och den lokala servern inte svarar. Webbläsarens taligenkänning är också avstängd, eftersom den skickar ljudet till en tjänst på nätet.
+- Svaren är rena utdrag. Modellen väljer utdrag och citat, och koden kontrollerar att citatet står ordagrant i just det utdraget (`strictSpan` i `src/js/03-text.js`). Skärmen visar manualens egen text med citatet markerat, aldrig modellens formulering.
+- Om citatet inte stämmer, svaret är motsägelsefullt eller JSON-svaret är avbrutet visas reservläget med sökträffar.
+- Larmkoder tolkas inte av AI:n i lokalt läge. Manualens sidor med koden visas ordagrant.
+
+Testa lokalt läge utan modell: `cd test && node run.mjs lokal`. Det kör testerna `lokal`, `lokal-strikt`, `lokal-avbruten`, `lokal-enhet` och `lokal-nere` mot en simulerad llama-server.
+
 ## Samarbete
 
 Flera personer arbetar i repot med var sin Claude. Läs `ANDRINGSLOGG.md` för de senaste ändringarna och öppna frågor, och `CLAUDE.md` för arbetssättet. Loggen uppdateras vid varje ändring.

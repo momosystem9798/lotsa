@@ -23,12 +23,56 @@ Här lämnar vi frågor och beslut till varandra. Skriv vem det riktar sig till 
 
 ---
 
+## 2026-11-22 – Lokal AI: första arbetsdagen (nätverksgräns, rena utdrag, strikt citatkontroll)
+**Gren:** `claude/festive-hawking-4e5e5s` · **Av:** Claude-session och Codex på uppdrag av kollegan
+**Vad:** Punkterna 1–3 i beslutet i `local/granskning-2026-11-22.md` är genomförda.
+1. Nätverksgräns, `src/js/00-standalone.js` och `10-app.js`:
+   - Lokalt läge (`local.intended`) gäller när sidan serveras från loopback, eller när `lotsa:localAi` är `http://127.0.0.1` eller `http://[::1]`. Andra adresser ignoreras.
+   - I lokalt läge används aldrig molnklienten, inte ens med en sparad nyckel och en server som inte svarar. Då ges felet `local_offline`.
+   - Taligenkänningen är avstängd i lokalt läge.
+   - Båda lokala anropen har `redirect: 'error'`.
+   - `applyKey` använder `STANDALONE.activeSample()`.
+2. Rena utdragsflöden, `src/js/04-ai.js` och `05-ui.js`:
+   - `codeEvidence`, uppgraderingen saknas→besvarad och strömningen är borttagna.
+   - `askLocal` visar bara manualens egen text: hela utdraget, med citatet markerat (`excerptTpl`).
+   - saknas och avvisad ger fasta texter. Modellens svar, `mt_orsak` och `kontakta_mt` visas inte.
+   - Motsägelser, ogiltig eller avbruten JSON och belägg som inte stämmer ger reservläget.
+   - `localSample.json` kräver `finish_reason: 'stop'` och strikt `JSON.parse`. Felkoden `local_error` har en fast text.
+   - Larm: ingen AI-tolkning i lokalt läge. `alarmsOf()` döljer AI-tolkade larmposter som inte är granskade (uppslag, register, chips, nattläge).
+   - "Steg för steg" och delvis-rutan döljs för utdragssvar.
+3. Strikt citatkontroll, `strictSpan` i `src/js/03-text.js`:
+   - Citatet måste vara ett sammanhängande spann med ordgräns i båda ändar.
+   - Bara blanksteg, citattecken och bindestreck jämnas ut. Skiftläge, siffror, decimaler, minustecken och skiljetecken måste stämma exakt.
+   - Citatet måste ligga inom det valda utdraget. Ordgränserna kontrolleras mot hela sidan.
+   - `chunksOf` sparar utdragens start och slut på sidan och kapar bara vid radbrytning eller blanksteg.
+   - Prompten säger nu att skiftläget ska kopieras exakt.
+
+Nya tester i `test/run.mjs`:
+- `lokal-strikt`: MR-negationen, decimalen, saknas med belägg, avvisad och ett korrekt citat.
+- `lokal-avbruten`: fyra fall av avbruten eller omgiven JSON.
+- `lokal-enhet`: mA/MA, minustecken, sluttecken och kapning mitt i 1,5.
+- `lokal-nere`: sparad nyckel med en server som inte svarar, och en extern adress.
+- `lokal` har en markör som kontrollerar att modellens fritext aldrig hamnar i sidan.
+
+README beskriver lokalt läge och hur det testas.
+**Varför:** Beslutet efter Codex granskning. Den lokala AI:n fick inte användas i en pilot innan detta var åtgärdat.
+**Testat:**
+- Hela Playwright-sviten går igenom.
+- Codex granskade diffen fyra gånger (read-only), se `local/granskning-2026-11-22.md`. Codex godkände till slut punkterna 1–3 utan kvarvarande blockerande fel.
+- En kort körning med den riktiga modellen (7 frågor) pågick vid commit. Resultatet läggs till i en senare post.
+**Kvar att göra / att veta:**
+- Med strikt kontroll och fast skiftläge kan fler svar hamna i reservläget än förut. Den frysta baslinjen 25/30 gäller det gamla flödet.
+- I lokalt läge anropar `generateCard`, metadataläsningen och `expandQuery` fortfarande modellen. Snabbkort blir utkast som måste granskas.
+- Modellen skriver fortfarande fältet `svar`, som kostar tid men inte visas.
+- Fas 1 återstår: ID-flöde, en klinisk regelspärr före modellen och larmvägen, ett separat skrivbordsbygge och paketerade bibliotek.
+- Den gamla varningen gäller fortfarande för en pilot: inte förrän fas 1 och en ny utvärdering är klara.
+
 ## 2026-11-22 – Codex granskade den lokala AI:n: två allvarliga fel och ett gemensamt beslut
 **Gren:** `claude/festive-hawking-4e5e5s` · **Av:** Claude-session och Codex på uppdrag av kollegan
 **Vad:** Ny fil `local/granskning-2026-11-22.md` med Codex granskning, diskussionen och beslutet. Ingen kod är ändrad än.
 **Varför:** Kollegan bad om en oberoende granskning.
 **Testat:** Claude bekräftade med egna körningar att `verifyQuote` godkänner "15 meter" mot "1,5 meter" och att `codeEvidence` kan ge ett svar som säger motsatsen till manualen ("får inte" → "får") ett godkänt citat, eftersom "inte" och "får" är stoppord i `terms()`.
-**Kvar att göra / att veta:** **Till alla: den lokala AI:n i `src/js/04-ai.js` får inte användas i en pilot förrän punkterna 1–3 i beslutet är åtgärdade.** Prioritet: stäng molnåterfall och extern serveradress i lokalt läge, ta bort `codeEvidence` och visning av strömmad modelltext, och inför strikt spannkontroll med regressionstest.
+**Kvar att göra / att veta:** **Till alla: den lokala AI:n i `src/js/04-ai.js` får inte användas i en pilot förrän punkterna 1–3 i beslutet är åtgärdade.** (Åtgärdat, se posten "Lokal AI: första arbetsdagen".) Prioritet: stäng molnåterfall och extern serveradress i lokalt läge, ta bort `codeEvidence` och visning av strömmad modelltext, och inför strikt spannkontroll med regressionstest.
 
 ## 2026-11-22 – Lokal AI: rättad status och belägg som koden hittar
 **Gren:** `claude/festive-hawking-4e5e5s` · **Av:** Claude-session på uppdrag av kollegan

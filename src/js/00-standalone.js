@@ -262,19 +262,28 @@ const STANDALONE = (() => {
      AI:n på samma adress som sidan och inget lämnar datorn. Adressen kan också anges för hand
      (localStorage "lotsa:localAi"), till exempel http://127.0.0.1:8080 vid test. */
   const LOCAL_NAME = 'lotsa:localAi';
-  const local = { base: null, model: '', ctx: 0 };
+  const LOOPBACK = /^(127\.0\.0\.1|localhost|\[::1\])$/;
+  /* Bara numeriska adresser på den egna datorn godtas för hand (inte "localhost", som beror på
+     namnuppslagningen). En annan adress i "lotsa:localAi" ignoreras, så att ingen kan styra
+     frågorna till en server utanför datorn. */
+  const loopbackBase = v => {
+    try { const u = new URL(String(v || '')); return u.protocol === 'http:' && /^(127\.0\.0\.1|\[::1\])$/.test(u.hostname) ? u.origin : null; } catch (e) { return null; }
+  };
+  const sameOrigin = /^https?:$/.test(location.protocol) && LOOPBACK.test(location.hostname) ? location.origin : null;
+  const manualBase = loopbackBase(ls.get(LOCAL_NAME));
+  /* Lokalt läge gäller när sidan serveras från den egna datorn eller när en lokal adress är
+     angiven. Då används aldrig molnet, inte ens om den lokala servern inte svarar. */
+  const local = { intended: !!(manualBase || sameOrigin), base: null, model: '', ctx: 0 };
   async function probeLocal() {
-    const manual = ls.get(LOCAL_NAME);
-    const sameOrigin = /^https?:$/.test(location.protocol) && /^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname) ? location.origin : null;
-    for (const base of [manual, sameOrigin].filter(Boolean)) {
+    for (const base of [manualBase, sameOrigin].filter(Boolean)) {
       try {
         const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 2500);
-        const r = await fetch(base.replace(/\/$/, '') + '/props', { signal: ctl.signal });
+        const r = await fetch(base + '/props', { signal: ctl.signal, redirect: 'error' });
         clearTimeout(t);
         if (!r.ok) continue;
         const p = await r.json();
         if (!p || !p.default_generation_settings) continue; /* inte llama-server */
-        local.base = base.replace(/\/$/, '');
+        local.base = base;
         local.model = String(p.model_alias || p.model_path || '').split(/[\\/]/).pop().replace(/\.gguf$/i, '');
         local.ctx = Number(p.default_generation_settings.n_ctx) || 0;
         return true;
@@ -328,7 +337,7 @@ const STANDALONE = (() => {
     else if (o.json) body.response_format = { type: 'json_object' };
     let res;
     try {
-      res = await fetch(local.base + '/v1/chat/completions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: o.signal });
+      res = await fetch(local.base + '/v1/chat/completions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: o.signal, redirect: 'error' });
     } catch (e) {
       if (o.signal && o.signal.aborted) throw err('cancelled');
       throw err('local_offline', String(e && e.message || e));
@@ -344,7 +353,7 @@ const STANDALONE = (() => {
     try {
       const { text, finish } = await readStream(res, (delta, snapshot) => { if (o.onText) { try { o.onText({ text: snapshot, delta }); } catch (e) { /* visning */ } } });
       if (!text.trim()) throw err('empty_completion');
-      return { text, truncated: finish === 'length', modelTierApplied: 'local' };
+      return { text, finish, truncated: finish !== 'stop', modelTierApplied: 'local' };
     } catch (e) {
       if (o.signal && o.signal.aborted) throw err('cancelled');
       if (e && e.code) { console.warn('Lotsa lokal AI-fel:', e.code, e.message); throw e; }
@@ -352,17 +361,28 @@ const STANDALONE = (() => {
     }
   }
   const localSample = (input, o) => runLocal(input, o);
-  localSample.json = async (input, o) => parseJson((await runLocal(input, { ...o, json: true })).text);
+  /* Strikt: svaret måste vara avslutat på vanligt sätt och hela texten ett JSON-objekt.
+     Avbruten generering eller text runt objektet räknas som ogiltigt. */
+  localSample.json = async (input, o) => {
+    const r = await runLocal(input, { ...o, json: true });
+    if (r.finish !== 'stop') throw err('invalid_json', 'Svaret avbröts (' + (r.finish || 'inget slut') + ')');
+    try { return JSON.parse(r.text.trim()); } catch (e) { throw err('invalid_json', 'Svaret var inte giltig JSON'); }
+  };
   localSample.limits = async () => ({ maxPromptBytes: 60000, images: { maxCount: 0, maxInputBytes: 0, mediaTypes: [] } });
   localSample.local = true;
 
-  const caps = { db: null, user, sample: ls.get(KEY_NAME) ? sample : null, downloads, dictation: makeDictation() };
-  const dbReady = Promise.all([makeDb().then(d => { caps.db = d; }), probeLocal().then(ok => { if (ok) caps.sample = localSample; })]);
+  /* I lokalt läge är molnklienten och webbläsarens taligenkänning (som skickar ljudet till en
+     tjänst på nätet) avstängda. Svarar inte den lokala servern ger runLocal felet local_offline. */
+  const cloud = () => (!local.intended && ls.get(KEY_NAME) ? sample : null);
+  const caps = { db: null, user, sample: local.intended ? localSample : cloud(), downloads, dictation: local.intended ? null : makeDictation() };
+  const dbReady = Promise.all([makeDb().then(d => { caps.db = d; }), local.intended ? probeLocal() : null]);
   window.claude = { use: name => dbReady.then(() => caps[name] || null) };
 
   return {
     sample,
-    isLocal: () => !!local.base,
+    /* AI-klienten som gäller just nu: den lokala i lokalt läge, annars molnet om en nyckel finns. */
+    activeSample: () => (local.intended ? localSample : cloud()),
+    isLocal: () => local.intended,
     localInfo: () => ({ ...local }),
     hasKey: () => !!ls.get(KEY_NAME),
     keyHint: () => { const k = ls.get(KEY_NAME) || ''; return k ? k.slice(0, 10) + '…' + k.slice(-4) : ''; },

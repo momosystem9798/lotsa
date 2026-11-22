@@ -50,7 +50,7 @@ ACT.apiKey = () => {
   </form>`);
 };
 function applyKey() {
-  S.caps.sample = STANDALONE.hasKey() ? STANDALONE.sample : null;
+  S.caps.sample = STANDALONE.activeSample();
   S.aiOff = false; S.aiNote = '';
   closeAllOverlays(); render();
 }

@@ -684,8 +684,11 @@ await test('fristaende', async () => {
   await ctx.close();
 });
 
-/* Skrivbordsversionen: appen hittar en lokal llama-server och skickar frågan dit, aldrig till internet. */
-await test('lokal', async () => {
+/* Skrivbordsversionen: appen hittar en lokal llama-server och skickar frågan dit, aldrig till internet.
+   localApi bygger en låtsasserver. make(text, utdragsId) ger modellens JSON (objekt) eller en råsträng,
+   till exempel avbruten JSON. */
+const MARK = 'MODELLTEXT-7Q3';
+function localApi(make, { finish = 'stop' } = {}) {
   const reqs = [], other = [];
   const api = async route => {
     const r = route.request(), u = r.url();
@@ -695,20 +698,45 @@ await test('lokal', async () => {
     const body = r.postDataJSON();
     reqs.push(body);
     const text = body.messages.map(m => m.content).join('\n');
-    const id = (text.match(/\[(U\d+)\] Infusionspump Flow 300, sida 4\b/) || [])[1] || 'U1';
-    const out = { belagg: [{ utdrag: id, citat: 'Anslut nätkabeln och kontrollera att nätlampan lyser' }], status: 'besvarad', svar: 'Så här startar du pumpen:\n1. Anslut nätkabeln och kontrollera att nätlampan lyser. [1]', kontakta_mt: false, mt_orsak: '', typ: 'procedur' };
-    const js = JSON.stringify(out), half = Math.ceil(js.length / 2);
+    /* Id för det utdrag som innehåller en viss text. */
+    const idOf = needle => { const blk = text.split(/\n(?=\[U\d+\] )/).find(x => /^\[U\d+\] /.test(x) && x.includes(needle)); return blk ? blk.match(/^\[(U\d+)\]/)[1] : 'U1'; };
+    const out = make(text, idOf);
+    const js = typeof out === 'string' ? out : JSON.stringify(out), half = Math.ceil(js.length / 2);
     const ev = d => 'data: ' + JSON.stringify({ choices: [{ delta: { content: d }, finish_reason: null }] }) + '\n\n';
-    const end = 'data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] }) + '\n\ndata: [DONE]\n\n';
+    const fin = typeof finish === 'function' ? finish() : finish;
+    const end = fin === null ? '' : 'data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: fin }] }) + '\n\ndata: [DONE]\n\n';
     return route.fulfill({ status: 200, headers: { ...CORS, 'content-type': 'text/event-stream' }, body: ev(js.slice(0, half)) + ev(js.slice(half)) + end });
   };
+  return { api, reqs, other };
+}
+async function localPage(api, { key = '', override = 'http://127.0.0.1:9999', hash = '#enhet-flow300', setup = null } = {}) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 }, deviceScaleFactor: 1 });
-  await ctx.addInitScript(() => { try { localStorage.setItem('lotsa:localAi', 'http://127.0.0.1:9999'); } catch (e) { /* inget */ } });
-  const { page } = await open(browser, { noClaude: true, hash: '#enhet-flow300', api, ctx });
+  if (setup) await setup(ctx);
+  await ctx.addInitScript(o => { try { if (o.override) localStorage.setItem('lotsa:localAi', o.override); if (o.key) localStorage.setItem('lotsa:apiKey', o.key); } catch (e) { /* inget */ } }, { override, key });
+  const { page } = await open(browser, { noClaude: true, hash, api, ctx });
+  return { ctx, page };
+}
+/* Ställer en fråga i enhetens chatt och väntar tills svaret (eller reservläget) är klart. */
+async function askChat(page, q) {
+  const n = await page.locator('.msg-a').count();
+  if (!(await page.locator('.composer textarea').count())) await page.click('[data-tab="fraga"]');
+  await page.fill('.composer textarea', q);
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(n => document.querySelectorAll('.msg-a').length > n && !document.querySelector('.msg-a .typing'), n, { timeout: 8000 });
+  return page.locator('.msg-a').last();
+}
+const ok = (id, citat, extra = {}) => ({ belagg: [{ utdrag: id, citat }], status: 'besvarad', svar: MARK + ' Så här gör du. [1]', kontakta_mt: false, mt_orsak: MARK, typ: 'fakta', ...extra });
+
+await test('lokal', async () => {
+  const { api, reqs, other } = localApi((text, idOf) => ok(idOf('Anslut nätkabeln och kontrollera'), 'Anslut nätkabeln och kontrollera att nätlampan lyser', { typ: 'procedur' }));
+  const { ctx, page } = await localPage(api);
   expect(!(await txt(page, '#banner').catch(() => '')).includes('API-nyckel'), 'ingen banner om API-nyckel i lokalt läge');
   await page.click('.shortcut >> nth=0');
   await page.waitForSelector('.msg-a .a-actions', { timeout: 8000 });
-  expect((await txt(page, '.msg-a')).includes('Så här startar du pumpen'), 'svar från den lokala AI:n visas');
+  const shown = await txt(page, '.msg-a');
+  expect(shown.includes('Ur manualen, ordagrant') && shown.includes('Anslut nätkabeln och kontrollera att nätlampan lyser'), 'manualens egen text visas');
+  expect(!(await page.content()).includes(MARK), 'modellens fritext visas aldrig');
+  expect((await txt(page, '.msg-a .excerpt mark')).startsWith('Anslut nätkabeln'), 'citatet markeras i utdraget');
   expect((await txt(page, '.src')).includes('Citat kontrollerat'), 'citatet kontrolleras mot manualen');
   const main = reqs[reqs.length - 1];
   const schema = main.response_format && main.response_format.json_schema && main.response_format.json_schema.schema;
@@ -721,7 +749,96 @@ await test('lokal', async () => {
   await page.screenshot({ path: SHOTS + '/38-lokal.png' });
   await page.click('.rail [data-role="admin"]');
   await go(page, '#installningar');
-  expect((await txt(page, '.kv')).includes('Lokal AI på den här datorn (Testmodell-4B-Q4_K_M)'), 'inställningarna visar den lokala modellen');
+  const kv = await txt(page, '.kv');
+  expect(kv.includes('Lokal AI på den här datorn (Testmodell-4B-Q4_K_M)'), 'inställningarna visar den lokala modellen');
+  expect(kv.includes('Röstinmatning') && kv.includes('Inte tillgänglig'), 'webbläsarens taligenkänning är avstängd i lokalt läge');
+  await ctx.close();
+});
+
+/* Strikt citatkontroll: citat som inte står ordagrant i utdraget ger reservläget, aldrig ett "kontrollerat" svar. */
+await test('lokal-strikt', async () => {
+  let mode = 'mr';
+  const { api, other } = localApi((text, idOf) => {
+    if (mode === 'mr') return ok(idOf('MR-miljö'), 'Pumpen får användas i MR-miljö');
+    if (mode === 'decimal') return ok(idOf('1 200 ml/h'), 'Hastighet: 01 till 1 200 ml/h');
+    if (mode === 'motsagelse') return { ...ok(idOf('MR-miljö'), 'Pumpen får inte användas i MR-miljö'), status: 'saknas' };
+    if (mode === 'avvisad') return { belagg: [], status: 'avvisad', svar: MARK + ' Ge 5 ml/h.', kontakta_mt: false, mt_orsak: '', typ: 'annat' };
+    return ok(idOf('MR-miljö'), 'Pumpen får inte användas i MR-miljö');
+  });
+  const { ctx, page } = await localPage(api);
+  const check = async (q, what) => {
+    const a = await askChat(page, q), t = await a.innerText();
+    expect(t.includes('Reservläge') && t.includes('kunde inte styrka'), what + ': reservläget visas');
+    expect(!t.includes('Citat kontrollerat'), what + ': inget kontrollerat citat');
+  };
+  await check('Får pumpen användas vid MR-undersökning?', 'MR-negationen');
+  mode = 'decimal'; await check('Vilket hastighetsområde har pumpen?', 'decimalen');
+  mode = 'motsagelse'; await check('Får pumpen användas i MR-miljö?', 'status saknas med belägg');
+  mode = 'avvisad';
+  let t = await (await askChat(page, 'Vilken hastighet ska min patient ha?')).innerText();
+  expect(t.includes('Lotsa gör inga kliniska bedömningar'), 'fast text vid avvisad fråga');
+  mode = 'ratt';
+  t = await (await askChat(page, 'Får pumpen användas i MR-miljö?')).innerText();
+  expect(t.includes('Citat kontrollerat') && t.includes('får inte användas i MR-miljö'), 'ordagrant citat godtas: ' + t.slice(0, 120));
+  expect(!(await page.content()).includes(MARK), 'modellens fritext visas aldrig');
+  expect(other.length === 0, 'inga anrop till Anthropic');
+  await ctx.close();
+});
+
+await test('lokal-avbruten', async () => {
+  /* Avbruten JSON, ett komplett objekt som ändå avbröts, slut utan slutbesked och text runt objektet. */
+  const full = idOf => ok(idOf('MR-miljö'), 'Pumpen får inte användas i MR-miljö');
+  const cases = [
+    ['avbruten JSON', idOf => JSON.stringify(full(idOf)).slice(0, 90), 'length'],
+    ['komplett objekt men length', idOf => full(idOf), 'length'],
+    ['inget slutbesked', idOf => full(idOf), null],
+    ['text runt objektet', idOf => 'Här är svaret: ' + JSON.stringify(full(idOf)) + ' Klart.', 'stop']
+  ];
+  let i = 0;
+  const { api } = localApi((text, idOf) => cases[i][1](idOf), { finish: () => cases[i][2] });
+  const { ctx, page } = await localPage(api);
+  for (; i < cases.length; i++) {
+    const t = await (await askChat(page, 'Får pumpen användas i MR-miljö?')).innerText();
+    expect(t.includes('Reservläge') && !t.includes('Citat kontrollerat'), cases[i][0] + ' ger reservläget');
+  }
+  expect(!(await page.content()).includes(MARK), 'ingen modelltext visas');
+  await ctx.close();
+});
+
+/* Enhetens skiftläge räknas: "mA" i manualen godtas inte som "MA" i citatet, och tvärtom. */
+await test('lokal-enhet', async () => {
+  const vm = await import('node:vm'), box = {};
+  vm.runInNewContext(readFileSync(join(TEST, '..', 'src/js/03-text.js'), 'utf8') + ';this.strictSpan = strictSpan;', box);
+  const r = [box.strictSpan('Ström högst 10 mA vid test.', 'Ström högst 10 MA vid test'), box.strictSpan('Ström högst 10 mA vid test.', 'ström högst 10 mA vid test'), box.strictSpan('Använd inte larmet!', 'Använd inte larmet?'), box.strictSpan('mA är inställd enhet.', 'MA är inställd enhet'), box.strictSpan('Temperatur −10 till 40 °C.', 'Temperatur -10 till 40 °C'), box.strictSpan('Temperatur −10 till 40 °C.', 'Temperatur −10 till 40 °C')];
+  expect(r[0] === null, 'mA och MA skiljs åt');
+  expect(r[1] === null, 'skiftläget gäller även första bokstaven');
+  expect(r[2] === null, 'skiljetecken i slutet måste stämma');
+  expect(r[3] === null, 'MA godtas inte för mA i början av citatet');
+  expect(r[4] === null, 'bindestreck godtas inte för minustecken');
+  expect(r[5] && r[5].start === 0, 'korrekt minustecken godtas');
+  const page = 'Håll avståndet minst 1,5 meter från patienten.';
+  expect(box.strictSpan(page, 'Håll avståndet minst 1', 0, 22) === null, 'ett utdrag som slutar mitt i 1,5 ger inget citat');
+  expect(box.strictSpan(page, 'Håll avståndet minst 1,5 meter', 0, 40) !== null, 'hela talet inom fönstret godtas');
+});
+
+/* Lokalt läge utan svarande server: molnet används aldrig, inte ens med en sparad nyckel.
+   En adress utanför datorn i lotsa:localAi godtas inte. */
+await test('lokal-nere', async () => {
+  const other = [], ext = [];
+  const api = async route => {
+    const u = route.request().url();
+    if (/api\.anthropic\.com/.test(u)) other.push(u);
+    return route.abort();
+  };
+  let { ctx, page } = await localPage(api, { key: 'sk-ant-test-0000000000' });
+  const t = await (await askChat(page, 'Hur rengör jag pumpen?')).innerText();
+  expect(t.includes('lokala AI:n svarar inte'), 'felet säger att den lokala AI:n inte svarar: ' + t.slice(0, 100));
+  expect(other.length === 0, 'inga anrop till Anthropic trots sparad nyckel');
+  await ctx.close();
+  ({ ctx, page } = await localPage(api, { override: 'http://extern.example:8080', setup: c => c.route(/extern\.example/, route => { ext.push(route.request().url()); return route.abort(); }) }));
+  await page.waitForTimeout(400);
+  expect(ext.length === 0, 'extern adress anropas inte');
+  expect((await txt(page, '#banner').catch(() => '')).includes('API-nyckel'), 'extern adress ger inte lokalt läge');
   await ctx.close();
 });
 
