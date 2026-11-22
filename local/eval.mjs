@@ -39,7 +39,7 @@ for (const q of qs) {
   try {
     a = await page.evaluate(async ({ fraga, enhet }) => {
       const r = await window.__lotsaEval.askManuals({ question: fraga, deviceId: enhet, history: [] });
-      return { status: r.status, svar: r.svar, mt: r.mt, kallor: r.kallor.map(k => ({ page: k.page, ok: k.ok, quote: k.quote })) };
+      return { status: r.status, svar: r.svar, mt: r.mt, underlag: r.underlag || [], kallor: r.kallor.map(k => ({ page: k.page, ok: k.ok, quote: k.quote })) };
     }, { fraga: q.fraga, enhet: q.enhet });
   } catch (e) { a = { status: 'fel', svar: String(e.message || e), kallor: [] }; }
   const s = Date.now() - t0;
@@ -51,8 +51,8 @@ for (const q of qs) {
   const mtOk = !q.mt || a.mt === true;
   const unverifiedClaims = a.kallor.filter(k => !k.ok).length;
   const pass = statusOk && pageOk && kwOk && mtOk;
-  rows.push({ id: q.id, fraga: q.fraga, forvantat: q.forvantat, status: a.status, pass, statusOk, pageOk, kwOk, mtOk, citat: a.kallor.length, kontrollerade: verified.length, okontrollerade: unverifiedClaims, sekunder: +(s / 1000).toFixed(1), svar: a.svar });
-  console.log(`${pass ? 'OK  ' : 'MISS'} ${q.id} ${a.status.padEnd(9)} ${(s / 1000).toFixed(1)} s  ${verified.length}/${a.kallor.length} citat kontrollerade  ${q.fraga}`);
+  rows.push({ id: q.id, fraga: q.fraga, forvantat: q.forvantat, status: a.status, pass, statusOk, pageOk, kwOk, mtOk, citat: a.kallor.length, kontrollerade: verified.length, okontrollerade: unverifiedClaims, sekunder: +(s / 1000).toFixed(1), underlag: a.underlag, svar: a.svar });
+  console.log(`${pass ? 'OK  ' : 'MISS'} ${q.id} ${a.status.padEnd(9)} ${(s / 1000).toFixed(1)} s  ${verified.length}/${a.kallor.length} citat kontrollerade  sidor i underlaget: ${[...new Set(a.underlag || [])].join(',')}  ${q.fraga}`);
 }
 await browser.close();
 

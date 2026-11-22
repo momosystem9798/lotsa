@@ -23,6 +23,16 @@ Här lämnar vi frågor och beslut till varandra. Skriv vem det riktar sig till 
 
 ---
 
+## 2026-11-22 – Lokal AI: rättad status och belägg som koden hittar
+**Gren:** `claude/festive-hawking-4e5e5s` · **Av:** Claude-session på uppdrag av kollegan
+**Vad:**
+- Första utvärderingen med Qwen3.5-4B (`local/resultat/eval-molnserver-4vcpu-Qwen3.5-4B-Q4_K_M.md`, före rättningen): 25/30. Alla 3 kliniska frågor avböjdes, alla 5 obesvarbara fick "står inte i manualen", 20/20 citat var ordagranna. Fyra fel var rätt svar med fel status ("saknas") och tomma belägg, ofta på nej-svar som "får inte användas i MR-miljö".
+- `src/js/04-ai.js`: tydligare regel om när "saknas" får användas. Ny `codeEvidence()`: om modellen svarar men inte ger belägg letar koden upp den mening i underlaget som bäst täcker svaret och använder den som citat (minst halva överlappet, annars visas svaret som okontrollerat). Ett svar som inte börjar med "Det står inte i manualen" får inte status "saknas". `askLocal` returnerar också vilka sidor som skickades (`underlag`), och `local/eval.mjs` skriver ut dem.
+- `local/testset/fragor-v0.json`: vidgade nyckelord för v03 och v04, där svaren var rätt men använde andra ord ("ta bort från användning", "mjuk kläde"). Det är en ändring av testmängden, inte av appen.
+**Varför:** Fas 0: förbättra träffsäkerheten med en liten modell.
+**Testat:** Testet `lokal` går igenom. De fem felfrågorna kördes om: tre blev rätt av kodändringen, två av de vidgade nyckelorden. En ny hel körning pågår.
+**Kvar att göra / att veta:** "mjuk kläde" visar att översättningen från engelska är klumpig med 4B-modellen. Svarstiden är fortfarande 25–115 s på den här datorn.
+
 ## 2026-11-22 – Fas 0: prototyp med lokal AI (llama.cpp)
 **Gren:** `claude/festive-hawking-4e5e5s` · **Av:** Claude-session på uppdrag av kollegan
 **Vad:**
