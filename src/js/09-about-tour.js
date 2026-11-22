@@ -45,9 +45,9 @@ V.om = {
 
       <section class="sect"><div class="sect-head"><h2 class="h2">Säkerhet och regelefterlevnad</h2></div>
         <ul class="checks">
-          ${check('Inga patientuppgifter', 'Appen ber aldrig om dem, påminner vid varje inmatning och stoppar frågor som innehåller personnummer innan de skickas.')}
+          ${check('Inga patientuppgifter', 'Skriv aldrig patientuppgifter i Lotsa. Appen kontrollerar fritextfält och stoppar text som ser ut att innehålla personnummer innan den sparas eller skickas till AI.')}
           ${check('Bara manualen som källa', 'Svaren bygger på tillverkarens bruksanvisning. Saknas svaret står det ”Det står inte i manualen”.')}
-          ${check('Källhänvisning med citatkontroll', 'Varje svar anger sida och avsnitt. Citatet jämförs ordagrant med manualtexten, och svar utan styrkt citat märks ut.')}
+          ${check('Källhänvisning med citatkontroll', 'I både lokalt läge och molnläget måste ett citat stämma ordagrant med manualtexten för att godkännas. Godkända citat länkar till sidan i manualen.')}
           ${check('Inga kliniska bedömningar', 'AI:n är instruerad att avvisa frågor om dosering och patientinställningar och hänvisa till ordination och lokala rutiner.')}
           ${check('Hänvisning till medicinteknik', 'Vid fel som kan påverka patientsäkerheten visas ”Kontakta medicinteknik” med numret till MT-jouren.')}
           ${check('Versionshantering', 'Varje svar visar manualens version. Gamla manualer flaggas, och larmregister och snabbkort nollställs när en ny version laddas upp.')}

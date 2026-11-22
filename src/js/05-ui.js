@@ -10,9 +10,12 @@ const dots = () => raw('<span class="dots"><i></i><i></i><i></i></span>');
 const phiNote = (txt = 'Skriv aldrig namn, personnummer eller andra patientuppgifter. Svaren bygger på manualen och ersätter inte klinisk bedömning.') => html`<p class="phi">${icon('shield')}<span>${txt}</span></p>`;
 
 /* ----- Källvisare: manualsidan som papper med citatet överstruket ----- */
-async function openSource({ manualId, page, range = null, section = '' }) {
+async function openSource({ manualId, page, range = null, section = '', rev = null }) {
   const m = manualById(manualId);
   if (!m) { toast('Manualen finns inte längre.'); return; }
+  /* Svaret byggde på en tidigare uppladdning av manualen: samma teckenposition kan vara en annan text nu. */
+  const moved = rev != null && rev !== '' && Number(rev) !== (m.uploadedAt || 0);
+  if (moved) range = null;
   const pages = await pagesOf(m);
   if (!pages.length) { toast('Manualens text kunde inte läsas in.'); return; }
   const st = { n: pages.some(p => p.n === page) ? page : pages[0].n };
@@ -25,6 +28,7 @@ async function openSource({ manualId, page, range = null, section = '' }) {
   const draw = () => {
     const i = Math.max(0, pages.findIndex(x => x.n === st.n)), p = pages[i], here = p.n === page && range;
     setHTML(body, html`
+      ${moved ? html`<div class="notice crit">${icon('warn')}<div><strong>Manualen har bytts ut</strong>Svaret byggde på en tidigare version. Citatet markeras inte här. Ställ frågan igen.</div></div>` : ''}
       ${stt.key === 'stale' ? html`<div class="notice warn">${icon('clock')}<div>Manualen är äldre än ${S.settings.staleMonths} månader. Kontrollera att det är gällande version.</div></div>` : ''}
       <div class="paper-head"><strong>Sida ${p.n}</strong>${p.n === page && section ? html`<span class="muted">${section}</span>` : ''}${here ? html`<span class="src-check ok">${icon('check')}Citatet står här</span>` : ''}${p.ocr ? html`<span class="badge">Tolkad med OCR</span>` : ''}</div>
       <div class="paper" tabindex="0">${here ? markRange(p.text, range) : p.text}</div>
@@ -40,7 +44,7 @@ async function openSource({ manualId, page, range = null, section = '' }) {
   });
   draw();
 }
-ACT.openPage = el => openSource({ manualId: el.dataset.m, page: Number(el.dataset.p), range: el.dataset.s !== '' && el.dataset.s !== undefined ? { start: Number(el.dataset.s), end: Number(el.dataset.e) } : null });
+ACT.openPage = el => openSource({ manualId: el.dataset.m, rev: el.dataset.r, page: Number(el.dataset.p), range: el.dataset.s !== '' && el.dataset.s !== undefined ? { start: Number(el.dataset.s), end: Number(el.dataset.e) } : null });
 ACT.openManual = el => openSource({ manualId: el.dataset.m, page: 1 });
 
 /* ----- Steg för steg: ett handgrepp i taget med stor text ----- */
@@ -110,7 +114,7 @@ function alarmCard(r, { shown = '' } = {}) {
     ${e.ai && !e.verified ? html`<div class="notice warn">${icon('warn')}<div>Citatet kunde inte kontrolleras mot manualtexten. Läs sidan i manualen innan du agerar.</div></div>` : ''}
     <div class="alarm-foot">
       <button class="btn btn-s" data-act="alarmSrc" data-ctx="${ctx}">${icon('book', 'ic-s')}Manual sida ${e.sida || '?'}</button>
-      <span class="small muted">${m.version || ''}${st.key === 'stale' ? ', bör kontrolleras' : ''}${r.source === 'ai' ? ', tolkad av AI' : ''}</span>
+      <span class="small muted">${m.version || ''}${st.key === 'stale' ? ', bör kontrolleras' : ''}${e.ai ? ', tolkad av AI och inte granskad' : ''}</span>
       <span class="sp"></span>
       ${steps.length > 1 ? html`<button class="btn btn-s btn-primary" data-act="alarmSteps" data-ctx="${ctx}">${icon('steps', 'ic-s')}Steg för steg</button>` : ''}
       ${!e.mt ? html`<button class="btn btn-s" data-act="alarmReport" data-ctx="${ctx}" data-code="${code}">${icon('clipboard', 'ic-s')}Felanmälan</button>` : ''}
@@ -131,12 +135,16 @@ ACT.alarmSteps = el => { const r = ALARM_CTX.get(el.dataset.ctx); if (r) openSte
 ACT.alarmReport = el => { const r = ALARM_CTX.get(el.dataset.ctx); if (r) openReport({ deviceId: r.device.id, code: el.dataset.code || r.key, tried: r.entry.atgard || [] }); };
 function alarmResultTpl(res, { deviceId = null, code = '' } = {}) {
   const dev = deviceId ? deviceById(deviceId) : null;
-  if (res.results.length) return html`${res.results.map(r => alarmCard(r, { shown: code }))}`;
-  if (res.textHits && res.textHits.length) {
-    return html`<div class="notice warn">${icon('info')}<div><strong>Reservläge utan AI</strong>${res.error ? aiFail(res.error) + ' ' : ''}Koden nämns i manualen. Här är manualens egen text.</div></div>
-      ${res.textHits.map(h => h.pages.slice(0, 2).map(p => { const m = p.text.match(codeRegex(code)); const i = m ? m.index + m[1].length : 0; const rg = m ? { start: i, end: i + m[2].length } : null;
-        return html`<button class="fallback-hit" data-act="openPage" data-m="${h.manual.id}" data-p="${p.n}" data-s="${rg ? rg.start : ''}" data-e="${rg ? rg.end : ''}"><strong>${h.device.name}, sida ${p.n}</strong><span>${snippetAround(p.text, rg, 420)}</span></button>`; }))}`;
-  }
+  const hits = res.textHits || [];
+  const textInner = hits.length ? html`<div class="notice">${icon('book')}<div><strong>Ur manualen, ordagrant</strong>Koden finns inte i larmregistret${res.results.length ? ' för ' + hits.map(h => h.device.name).join(' och ') : ''}, men nämns i manualen. Här är manualens egen text.</div></div>
+      ${hits.map(h => h.pages.slice(0, 2).map(p => {
+        const m = p.text.match(codeRegex(code)), i = m ? m.index + m[1].length : 0;
+        const rg = m ? (alarmBlock(p.text, p.text.slice(i, i + m[2].length)) || { start: i, end: i + m[2].length }) : null;
+        return html`<button class="fallback-hit" data-act="openPage" data-m="${h.manual.id}" data-p="${p.n}" data-s="${rg ? rg.start : ''}" data-e="${rg ? rg.end : ''}"><strong>${h.device.name}, sida ${p.n}</strong><span>${snippetAround(p.text, rg, 420)}</span></button>`; }))}` : '';
+  /* Utan registerträff ramar anroparen in texten. Med registerträffar får texten en egen ruta. */
+  const textPart = textInner && res.results.length ? html`<article class="msg-a">${textInner}</article>` : textInner;
+  if (res.results.length) return html`${res.results.map(r => alarmCard(r, { shown: code }))}${textPart}`;
+  if (hits.length) return textPart;
   return html`<div class="a-status saknas">${icon('search-x')}Det står inte i manualen</div>
     <p>Koden <span class="code">${code}</span> finns inte i ${dev ? 'manualen för ' + dev.name : 'någon av manualerna'}. Kontrollera att koden är rätt avläst.</p>
     ${dev ? mtCard(dev, { soft: true, why: 'Stämmer koden: kontakta MT eller tillverkarens support.', code }) : ''}`;
@@ -146,10 +154,15 @@ async function runAlarm(code, deviceId, out) {
   if (!code || !out) return;
   if (findPNR(code).length) { toast('Skriv bara larmkoden, inga personuppgifter.', 'crit'); return; }
   const shown = code.toUpperCase();
+  /* Varje uppslag får ett löpnummer. Ett äldre uppslag som blir klart sent ritar inte över ett nyare. */
+  const seq = String((Number(out.dataset.seq) || 0) + 1);
+  out.dataset.seq = seq;
+  const current = () => out.dataset.seq === seq && out.isConnected;
   setHTML(out, html`<div class="typing">${dots()}<span>Slår upp ${shown}</span></div>`);
   let res;
   try { res = await lookupAlarm(code, deviceId || null); }
-  catch (e) { setHTML(out, html`<div class="notice warn">${icon('warn')}<div>${aiFail(e) || 'Uppslaget avbröts.'}</div></div>`); return; }
+  catch (e) { if (current()) setHTML(out, html`<div class="notice warn">${icon('warn')}<div>${aiFail(e) || 'Uppslaget avbröts.'}</div></div>`); return; }
+  if (!current()) return;
   setHTML(out, res.results.length ? alarmResultTpl(res, { deviceId, code: shown }) : html`<article class="msg-a">${alarmResultTpl(res, { deviceId, code: shown })}</article>`);
   if (deviceId) touchRecent(deviceId);
   if (!TOUR.on) logQuestion({ d: deviceId || (res.results[0] ? res.results[0].device.id : ''), q: shown, k: 'alarm', st: res.results.length ? 'ok' : (res.textHits ? 'reserv' : 'saknas'), m: 'larm', mt: res.results.some(r => r.entry.mt) ? 1 : 0 });
@@ -198,7 +211,7 @@ FORM.report = async f => {
   const fd = new FormData(f), dev = deviceById(f.dataset.id);
   const what = String(fd.get('what') || '').trim(), more = String(fd.get('more') || '').trim();
   if (!what || !dev) return;
-  if (findPNR(what + ' ' + more).length) { toast('Texten ser ut att innehålla ett personnummer. Ta bort det och försök igen.', 'crit'); return; }
+  if ([...fd.values()].some(v => findPNR(v).length)) { toast('Texten ser ut att innehålla ett personnummer. Ta bort det och försök igen.', 'crit'); return; }
   const tried = fd.getAll('tried').map(String);
   if (more) tried.push(more);
   const r = { deviceId: dev.id, code: String(fd.get('code') || '').trim().toUpperCase(), what, tried, outOfService: !!fd.get('oos'), status: 'open', createdAt: Date.now() };
@@ -258,7 +271,7 @@ function chatEmptyTpl(key) {
   }
   const ex = S.settings.demoMode ? ['Hur rengör jag patientmonitorn mellan patienter?', 'Sugen når inte fullt vakuum, vad kontrollerar jag?', 'Hur gör jag kontroll före användning på ventilatorn?'] : [];
   return html`<div class="chat-empty">
-    <p class="lead">Ställ en fråga så söker Lotsa i alla ${manuals().length} manualer. Nämn gärna vilken utrustning det gäller.</p>
+    <p class="lead">Ställ en fråga så söker Lotsa i ${manuals().length === 1 ? 'manualen' : 'alla ' + manuals().length + ' manualer'}. Nämn gärna vilken utrustning det gäller.</p>
     ${ex.length ? html`<div class="stack">${ex.map(q => html`<button class="shortcut" data-act="exampleQ" data-q="${q}">${icon('chat')}${q}</button>`)}</div>` : ''}
     ${!aiReady() ? html`<div class="notice">${icon('info')}<div>${S.aiNote || 'AI-svar är inte tillgängliga i den här visningen.'} Du får i stället de sidor i manualerna som matchar frågan bäst.</div></div>` : ''}
   </div>`;
@@ -278,61 +291,71 @@ function usedLine(r) {
   const stale = ms.filter(m => manualStatus(m).key === 'stale');
   const cited = [...new Set(r.kallor.map(k => k.manualId))].map(manualById).filter(Boolean);
   const show = cited.length ? cited : (ms.length === 1 ? ms : []);
-  return html`<span>${show.length ? 'Bygger på ' + show.map(m => `${m.title || 'bruksanvisning'}, ${verLine(m)}`).join(' och ') : `Sökte i ${ms.length} manualer`}</span>
+  /* Versionen som svaret byggde på, inte den som gäller nu (de skiljer sig om manualen bytts ut). */
+  const ver = m => { const u = r.used.find(x => x.manualId === m.id); return u && u.rev != null && u.rev !== (m.uploadedAt || 0) ? (u.version || 'tidigare version') + ' (ersatt)' : verLine(m); };
+  return html`<span>${show.length ? 'Bygger på ' + show.map(m => `${m.title || 'bruksanvisning'}, ${ver(m)}`).join(' och ') : `Sökte i ${ms.length} ${ms.length === 1 ? 'manual' : 'manualer'}`}</span>
     ${show.some(m => stale.includes(m)) ? html`<span class="badge b-warn">${icon('clock')}Manualen är äldre än ${S.settings.staleMonths} månader</span>` : ''}`;
 }
 /* Lokalt läge: manualens egna stycken visas ordagrant, med det kontrollerade citatet markerat.
    Ett klick öppnar sidan i manualen. */
+const revOf = (r, manualId) => { const u = (r.used || []).find(x => x.manualId === manualId); return u && u.rev != null ? u.rev : ''; };
+/* Har någon manual som svaret byggde på laddats upp på nytt sedan dess? */
+const staleRev = r => (r.used || []).some(u => u.rev != null && manualById(u.manualId) && (manualById(u.manualId).uploadedAt || 0) !== u.rev);
 function excerptTpl(r) {
   if (!r.utdrag || !r.utdrag.length) return r.svar ? html`<p>${r.svar}</p>` : '';
-  return html`<div class="excerpts"><div class="sources-h">Ur manualen, ordagrant</div>${r.utdrag.map(u => {
+  return html`<div class="excerpts"><div class="sources-h">Ur manualen, ordagrant <span class="badge b-ai">Urval gjort av AI</span></div>${r.utdrag.map(u => {
     const k = r.kallor.find(x => x.utdrag === u.id);
-    /* Citaten markeras på sina egna platser i utdraget, i textordning och utan överlapp. */
-    const marks = (u.marks || []).slice().sort((a, b) => a.start - b.start).filter((x, i, l) => !i || x.start >= l[i - 1].end);
+    /* Valda rader markeras gula, varningar i stycket röda. I textordning och utan överlapp. */
+    const all = [...(u.marks || []).map(x => ({ ...x, cls: x.warn ? 'warn' : '' })), ...(u.warnMarks || []).filter(w => !(u.marks || []).some(x => x.start === w.start)).map(x => ({ ...x, cls: 'warn' }))];
+    const marks = all.sort((a, b) => a.start - b.start).filter((x, i, l) => !i || x.start >= l[i - 1].end);
     const parts = []; let at = 0;
-    marks.forEach(x => { parts.push(u.text.slice(at, x.start), html`<mark>${u.text.slice(x.start, x.end)}</mark>`); at = x.end; });
+    marks.forEach(x => { parts.push(u.text.slice(at, x.start), html`<mark class="${x.cls}">${u.text.slice(x.start, x.end)}</mark>`); at = x.end; });
     parts.push(u.text.slice(at));
-    return html`<button class="fallback-hit excerpt" data-act="openPage" data-m="${u.manualId}" data-p="${u.page}" data-s="${k ? k.range.start : ''}" data-e="${k ? k.range.end : ''}"><strong>${u.device}, sida ${u.page}${u.section ? ', ' + u.section : ''}</strong><span class="excerpt-text">${parts}</span></button>`;
-  })}<p class="hint">Lotsa har inte bedömt om utdragen besvarar hela frågan. Läs i manualen innan du agerar.</p></div>`;
+    return html`<button class="fallback-hit excerpt" data-act="openPage" data-m="${u.manualId}" data-r="${revOf(r, u.manualId)}" data-p="${u.page}" data-s="${k ? k.range.start : ''}" data-e="${k ? k.range.end : ''}"><strong>${u.device}, sida ${u.page}${u.section ? ', ' + u.section : ''}</strong><span class="excerpt-text">${parts}</span></button>`;
+  })}${r.varningar && r.varningar.length ? html`<div class="notice crit">${icon('warn')}<div><strong>Varningar i samma avsnitt</strong>${r.varningar.map(v => html`<button class="linkbtn warnline" data-act="openPage" data-m="${v.manualId}" data-r="${revOf(r, v.manualId)}" data-p="${v.page}" data-s="${v.start}" data-e="${v.end}">${v.text} <span class="muted small">(sida ${v.page})</span></button>`)}</div></div>` : ''}
+  <p class="hint">AI:n har valt ut raderna. Texten är tillverkarens egen. Lotsa har inte bedömt om utdragen besvarar hela frågan. Läs i manualen innan du agerar.</p></div>`;
 }
 function answerTpl(m) {
   const r = m.res;
   const dev = (m.deviceId && deviceById(m.deviceId)) || (r.kallor[0] && deviceById(r.kallor[0].deviceId)) || null;
   let svar = r.svar;
-  if (r.status === 'saknas') svar = svar.replace(/^\s*Det står inte i manualen\.?\s*/i, '');
+  if (r.status === 'saknas') svar = svar.replace(/^\s*(?:Det står inte i manualen|Hittade inget svar[^.]*)\.?\s*/i, '');
   const steps = parseSteps(r.svar);
   const multi = !m.deviceId || new Set(r.kallor.map(k => k.manualId)).size > 1;
   const okTips = dev ? tips().filter(t => t.deviceId === dev.id && t.status === 'approved').length : 0;
   return html`
     ${m.example ? html`<div><span class="badge b-demo">Förinspelat exempelsvar</span></div>` : ''}
-    ${r.status === 'saknas' ? html`<div class="a-status saknas">${icon('search-x')}${r.excerpt ? 'Hittade inget svar' : 'Det står inte i manualen'}</div>` : ''}
+    ${r.status === 'saknas' ? html`<div class="a-status saknas">${icon('search-x')}${r.excerpt || r.partial ? 'Hittade inget svar i de sökta avsnitten' : 'Det står inte i manualen'}</div>` : ''}
     ${r.status === 'avvisad' ? html`<div class="a-status avvisad">${icon('shield')}Ingen klinisk bedömning</div>` : ''}
     ${r.excerpt ? excerptTpl(r) : svar ? html`<div class="a-body">${renderAnswer(svar, m.id)}</div>` : ''}
     ${r.status === 'delvis' && !r.excerpt ? html`<div class="notice warn">${icon('info')}<div>Manualen besvarar bara en del av frågan.</div></div>` : ''}
-    ${r.unverified ? html`<div class="notice warn">${icon('warn')}<div><strong>Svaret är inte styrkt med citat</strong>Inget citat kunde kontrolleras mot manualtexten. Läs i manualen innan du agerar.</div></div>` : ''}
-    ${r.mt ? mtCard(dev, { why: r.mtWhy, tried: steps }) : (r.status === 'saknas' && dev && !r.noManual ? mtCard(dev, { soft: true, why: r.excerpt ? 'Lotsa hittade inget svar i de sökta avsnitten. Läs i manualen eller fråga MT.' : 'Manualen ger inget svar. Fråga MT eller tillverkarens support.' }) : '')}
-    ${r.kallor.length ? html`<div class="sources"><div class="sources-h">Källor ur manualen</div>${r.kallor.map(k => srcTpl(m, k, multi))}</div>` : ''}
-    <div class="a-meta">${usedLine(r)}${okTips ? html`<button class="linkbtn" data-act="devTab" data-id="${dev.id}" data-tab="tips">${okTips} lokala tips finns för enheten</button>` : ''}</div>
+    ${staleRev(r) ? html`<div class="notice crit">${icon('warn')}<div><strong>Manualen har bytts ut sedan svaret gavs</strong>Svaret bygger på en tidigare version. Ställ frågan igen innan du agerar.</div></div>` : ''}
+    ${r.unverified ? html`<div class="notice warn">${icon('warn')}<div><strong>${r.conflict ? 'Svaret stämmer inte med citatet' : 'Svaret är inte styrkt med citat'}</strong>${r.conflict ? 'En rad i svaret säger något annat än citatet den hänvisar till (en negation eller ett tal skiljer sig). Det som gäller är manualens text. Läs i manualen innan du agerar.' : (r.kallor.some(k => k.ok) ? 'Minst ett påstående i svaret saknar ett citat som står i manualen.' : 'Inget citat kunde kontrolleras mot manualtexten.') + ' Läs i manualen innan du agerar.'}</div></div>` : ''}
+    ${r.mt ? mtCard(dev, { why: r.mtWhy, tried: steps }) : (r.status === 'saknas' && dev && !r.noManual ? mtCard(dev, { soft: true, why: r.excerpt || r.partial ? 'Lotsa hittade inget svar i de sökta avsnitten. Läs i manualen eller fråga MT.' : 'Manualen ger inget svar. Fråga MT eller tillverkarens support.' }) : '')}
+    ${r.kallor.length ? html`<div class="sources"><div class="sources-h">Källor ur manualen</div>${r.kallor.map(k => srcTpl(m, k, multi))}${!r.excerpt && !m.example ? html`<p class="hint">Svaret ovan är formulerat av AI. Citaten är kontrollerade ordagrant mot manualen. Vid minsta tvekan gäller citatet och manualen.</p>` : ''}</div>` : ''}
+    ${m.hits && m.hits.length ? html`<details class="hits-more"><summary>Fler sökträffar i manualen (${m.hits.length})</summary><div class="hits-live">${m.hits.map(hitTpl)}</div></details>` : ''}
+    <div class="a-meta">${usedLine(r)}${okTips ? html`<button class="linkbtn" data-act="devTab" data-id="${dev.id}" data-tab="tips">${okTips} ${okTips === 1 ? 'lokalt tips' : 'lokala tips'} finns för enheten</button>` : ''}</div>
     <div class="a-actions">
       <button class="btn btn-s btn-icon ${m.fb === 1 ? 'is-on' : ''}" data-act="fb" data-mid="${m.id}" data-v="1" aria-label="Bra svar" aria-pressed="${m.fb === 1}">${icon('thumb-up', 'ic-s')}</button>
       <button class="btn btn-s btn-icon ${m.fb === -1 ? 'is-on' : ''}" data-act="fb" data-mid="${m.id}" data-v="-1" aria-label="Dåligt svar" aria-pressed="${m.fb === -1}">${icon('thumb-down', 'ic-s')}</button>
       <button class="btn btn-s ${m.flagged ? 'is-on' : ''}" data-act="flag" data-mid="${m.id}" ${m.flagged ? 'disabled' : ''}>${icon('flag', 'ic-s')}${m.flagged ? 'Flaggat' : 'Flagga fel'}</button>
       <span class="sp"></span>
-      ${steps.length > 1 && !r.excerpt ? html`<button class="btn btn-s btn-primary" data-act="stepsMsg" data-mid="${m.id}">${icon('steps', 'ic-s')}Steg för steg</button>` : ''}
+      ${steps.length > 1 && !r.excerpt && !r.unverified && !staleRev(r) ? html`<button class="btn btn-s btn-primary" data-act="stepsMsg" data-mid="${m.id}">${icon('steps', 'ic-s')}Steg för steg</button>` : ''}
       ${!m.example && r.tier === 'quick' && aiReady() && r.status !== 'avvisad' && !r.noManual ? html`<button class="btn btn-s" data-act="deeper" data-mid="${m.id}">Noggrannare svar</button>` : ''}
       <button class="btn btn-s btn-icon" data-act="copyMsg" data-mid="${m.id}" aria-label="Kopiera svaret">${icon('copy', 'ic-s')}</button>
     </div>`;
 }
+const hitTpl = h => html`<button class="fallback-hit" data-act="openPage" data-m="${h.m.id}" data-r="${h.m.uploadedAt || 0}" data-p="${h.n}" data-s="${h.range ? h.range.start : ''}" data-e="${h.range ? h.range.end : ''}"><strong>${h.d.name}, sida ${h.n}</strong><span>${snippetAround(h.text, h.range, 240)}</span></button>`;
 function msgTpl(m) {
   if (m.role === 'q') return html`<div class="msg-q">${m.text}</div>`;
   let inner;
   const stop = html`<span class="sp"></span><button class="btn btn-s btn-quiet" data-act="stopAsk" data-key="${m.key}">Avbryt</button>`;
-  if (m.state === 'wait') inner = html`<div class="typing">${dots()}<span>${m.note || 'Söker i manualen'}</span>${stop}</div>`;
+  if (m.state === 'wait') inner = html`<div class="typing">${dots()}<span>${m.note || 'Söker i manualen'}</span>${stop}</div>${m.hits && m.hits.length ? html`<div class="hits-live"><div class="sources-h">Sökträffar i manualen medan AI:n väljer ut svaret</div>${m.hits.map(hitTpl)}</div>` : ''}`;
   else if (m.state === 'stream') inner = html`<div class="a-body">${renderAnswer(m.text || '')}</div><div class="typing">${dots()}<span>Skriver svaret</span>${stop}</div>`;
   else if (m.state === 'blocked') inner = html`<div class="notice crit">${icon('shield')}<div><strong>Frågan skickades inte</strong>Texten ser ut att innehålla ett personnummer. Ta bort alla patientuppgifter och ställ frågan igen.</div></div>`;
   else if (m.state === 'alarm') inner = alarmResultTpl(m.alarm, { deviceId: m.deviceId, code: m.code || m.q.toUpperCase() });
   else if (m.state === 'fallback') inner = html`<div class="notice warn">${icon('info')}<div><strong>Reservläge utan AI</strong>${m.why || ''} ${m.hits.length ? 'Här är de sidor i manualen som matchar frågan bäst.' : ''}</div></div>
-      ${m.hits.length ? m.hits.map(h => html`<button class="fallback-hit" data-act="openPage" data-m="${h.m.id}" data-p="${h.n}" data-s="${h.range ? h.range.start : ''}" data-e="${h.range ? h.range.end : ''}"><strong>${h.d.name}, sida ${h.n}</strong><span>${snippetAround(h.text, h.range, 240)}</span></button>`) : html`<p>Inga sidor i manualen matchar frågan.</p>`}
+      ${m.hits.length ? m.hits.map(hitTpl) : html`<p>Inga sidor i manualen matchar frågan.</p>`}
       ${aiReady() ? html`<div><button class="btn btn-s" data-act="retryAsk" data-mid="${m.id}">Försök igen</button></div>` : ''}`;
   else if (m.state === 'error') inner = html`<p class="muted">${m.err || 'Något gick fel.'}</p>${m.cancelled ? '' : html`<div><button class="btn btn-s" data-act="retryAsk" data-mid="${m.id}">Försök igen</button></div>`}`;
   else inner = answerTpl(m);
@@ -358,7 +381,7 @@ function revealAnswer(m) {
 }
 function exampleAnswer(dev, man, kind) {
   const b = kind === 'start' ? man.card.uppstart : man.card.rengoring;
-  const v = verifyQuote(man.pages || [], b.sida, b.citat);
+  const v = strictQuote(man.pages || [], b.sida, b.citat);
   return {
     status: 'besvarad', svar: b.steg.map((s, i) => `${i + 1}. ${s}${i === b.steg.length - 1 ? ' [1]' : ''}`).join('\n'),
     kallor: [{ n: 1, manualId: man.id, deviceId: dev.id, page: v.page || b.sida, section: b.avsnitt, quote: b.citat, ok: !!v.ok, range: v.range || null }],
@@ -376,13 +399,10 @@ async function askFallback(m, why) {
   }
   m.logP = logQuestion({ d: m.deviceId || '', q: m.q, k: m.kind, st: m.example ? 'ok' : 'reserv', m: 'chatt' });
 }
-/* Korta frågor som nämner en kod ur larmregistret besvaras direkt ur registret, utan AI. */
-function embeddedCode(text, deviceId) {
-  if (text.trim().split(/\s+/).length > 9) return '';
-  const cands = text.match(/[A-Za-zÅÄÖåäö]{1,4}[-\s]?\d{1,4}[A-Za-z]?(?![\wåäö])/g) || [];
-  const devs = deviceId ? [deviceById(deviceId)].filter(Boolean) : devices();
-  for (const c of cands) if (devs.some(d => matchAlarm(alarmsOf(manualFor(d)), c))) return c.trim();
-  return '';
+/* Korta frågor kan innehålla en larmkod som stöds av registret eller manualen. */
+function embeddedCodes(text) {
+  if (text.trim().split(/\s+/).length > 9) return [];
+  return text.match(/(?<![\p{L}\p{N}])[A-ZÅÄÖ]{1,5}[\s\-.:]{0,2}\d{1,4}[A-ZÅÄÖ]?(?![\p{L}\p{N}])/giu) || [];
 }
 async function ask(key, text, { kind = '', tier = '', shortcut = false } = {}) {
   const c = chatOf(key);
@@ -399,40 +419,54 @@ async function ask(key, text, { kind = '', tier = '', shortcut = false } = {}) {
   const m = { id: uid(), role: 'a', key, deviceId, q: text, kind: kind || guessKind(text), state: 'wait', fb: 0, shortcut };
   c.msgs.push({ id: uid(), role: 'q', text }, m);
   c.busy = true;
+  /* Avbryt fungerar från första stund: kontrollen finns innan vänteläget visas och prövas efter
+     varje steg som väntar. */
+  const ctl = c.ctl = new AbortController();
+  const live = () => { if (ctl.signal.aborted) throw Object.assign(new Error('cancelled'), { code: 'cancelled' }); };
   renderLog(key); scrollToEnd();
   try {
-    const code = looksLikeCode(text) ? text : (tier ? '' : embeddedCode(text, deviceId));
+    let code = '', evidence;
+    const candidates = isCodeQuery(text) ? [text] : (tier ? [] : embeddedCodes(text).filter(isCodeQuery));
+    for (const candidate of candidates) {
+      evidence = await alarmEvidence(candidate, deviceId);
+      live();
+      if (!evidence.notFound) { code = candidate; break; }
+    }
     if (code) {
       m.note = 'Slår upp larmkoden'; m.kind = 'alarm'; m.code = code.toUpperCase();
-      c.ctl = new AbortController();
-      const res = await lookupAlarm(code, deviceId, { signal: c.ctl.signal });
+      const res = await lookupAlarm(code, deviceId, { signal: ctl.signal, evidence });
+      live();
       m.alarm = res; m.state = 'alarm';
       m.logP = logQuestion({ d: deviceId || (res.results[0] ? res.results[0].device.id : ''), q: m.code, k: 'alarm', st: res.results.length ? 'ok' : (res.textHits ? 'reserv' : 'saknas'), m: 'larm', mt: res.results.some(r => r.entry.mt) ? 1 : 0 });
     } else if (!aiReady()) {
       await askFallback(m, S.aiNote || 'AI-svar är inte tillgängliga i den här visningen.');
+      live();
     } else {
-      c.ctl = new AbortController();
+      /* Sökträffarna visas direkt, så att man kan börja läsa medan AI:n arbetar. */
+      try { m.hits = await searchPassages(text, deviceId, 3); } catch (e) { m.hits = []; }
+      live();
+      if (m.state === 'wait' && document.getElementById('m-' + m.id)) updateMsg(m);
       const res = await askManuals({
-        question: text, deviceId, tier: tier || S.settings.aiTier, signal: c.ctl.signal,
-        history: prevA ? [{ q: prevA.q, a: prevA.res.svar }] : [],
-        onStream: t => {
-          m.text = t;
-          if (m.state !== 'stream') { m.state = 'stream'; updateMsg(m); }
-          else { const b = document.querySelector('#m-' + m.id + ' .a-body'); if (b) setHTML(b, renderAnswer(t)); }
-        }
+        question: text, deviceId, tier: tier || S.settings.aiTier, signal: ctl.signal,
+        history: prevA ? [{ q: prevA.q, a: prevA.res.svar }] : []
       });
+      live();
       m.res = res; m.state = 'done';
       const dId = deviceId || (res.kallor[0] ? res.kallor[0].deviceId : '');
-      m.logP = logQuestion({ d: dId, q: text, k: m.kind, st: res.status === 'besvarad' ? 'ok' : res.status, m: 'chatt', mt: res.mt ? 1 : 0, ver: res.used.length === 1 ? res.used[0].version : '', ms: res.ms, src: res.kallor.filter(k => k.ok).length });
+      m.logP = logQuestion({ d: dId, q: text, k: m.kind, st: res.unverified ? 'ostyrkt' : res.status === 'besvarad' ? (res.excerpt ? 'urval' : 'ok') : res.status, m: 'chatt', mt: res.mt ? 1 : 0, ver: res.used.length === 1 ? res.used[0].version : '', ms: res.ms, src: res.kallor.filter(k => k.ok).length });
     }
   } catch (e) {
-    if (e && e.code === 'cancelled') { m.state = 'error'; m.err = 'Frågan avbröts.'; m.cancelled = true; }
+    if ((e && e.code === 'cancelled') || ctl.signal.aborted) { m.state = 'error'; m.err = 'Frågan avbröts.'; m.cancelled = true; }
     else {
       const why = aiFail(e);
       try { await askFallback(m, why); } catch (e2) { m.state = 'error'; m.err = why || 'Något gick fel.'; }
+      /* Avbröts frågan medan reservsökningen pågick visas inget reservsvar. */
+      if (ctl.signal.aborted) { m.state = 'error'; m.err = 'Frågan avbröts.'; m.cancelled = true; }
     }
   }
-  c.busy = false; c.ctl = null;
+  c.busy = false; if (c.ctl === ctl) c.ctl = null;
+  /* Rensad konversation: det gamla svaret ritas inte upp i den nya. */
+  if (CHATS.get(key) !== c) return true;
   if (document.getElementById('m-' + m.id)) updateMsg(m); else renderLog(key);
   revealAnswer(m);
   return true;
@@ -469,7 +503,8 @@ ACT.deeper = el => { const m = findMsg(el.dataset.mid); if (m) ask(m.key, m.q, {
 ACT.cite = el => {
   const m = findMsg(el.dataset.mid);
   const k = m && m.res && m.res.kallor.find(x => String(x.n) === el.dataset.n);
-  if (k) openSource({ manualId: k.manualId, page: k.page, range: k.range, section: k.section });
+  const u = k && (m.res.used || []).find(x => x.manualId === k.manualId);
+  if (k) openSource({ manualId: k.manualId, page: k.page, range: k.range, section: k.section, rev: u && u.rev != null ? u.rev : null });
   else toast('Källan finns inte med i svaret.');
 };
 ACT.stepsMsg = el => {
@@ -478,7 +513,20 @@ ACT.stepsMsg = el => {
   const dev = m.deviceId ? deviceById(m.deviceId) : null, k = m.res.kallor[0];
   openSteps({ title: dev ? dev.name : 'Steg för steg', sub: k ? `Ur manualen, sida ${k.page}` : '', steps: parseSteps(m.res.svar) });
 };
-ACT.copyMsg = el => { const m = findMsg(el.dataset.mid); if (m && m.res) copyText(plainAnswer(m.res.svar) + (m.res.kallor.length ? '\n\nKälla: ' + m.res.kallor.map(k => 'sida ' + k.page).join(', ') : ''), 'Svaret är kopierat'); };
+/* Kopian bär samma märkning och varningar som skärmen, så att den inte ser mer säker ut än svaret. */
+ACT.copyMsg = el => {
+  const m = findMsg(el.dataset.mid);
+  if (!m || !m.res) return;
+  const r = m.res, out = [];
+  if (r.excerpt) out.push('Ur manualen, ordagrant. Urvalet är gjort av AI.');
+  else if (r.status === 'besvarad' || r.status === 'delvis') out.push('Svaret är formulerat av AI. Vid tvekan gäller manualens text.');
+  if (r.unverified) out.push(r.conflict ? 'VARNING: Svaret stämmer inte med citatet.' : 'VARNING: Svaret är inte styrkt med citat.');
+  if (staleRev(r)) out.push('VARNING: Manualen har bytts ut sedan svaret gavs.');
+  out.push('', plainAnswer(r.svar));
+  if (r.varningar && r.varningar.length) out.push('', 'Varningar i samma avsnitt:', ...r.varningar.map(v => '- ' + v.text + ' (sida ' + v.page + ')'));
+  if (r.kallor.length) out.push('', 'Källa: ' + r.kallor.map(k => 'sida ' + k.page).join(', '));
+  copyText(out.join('\n'), 'Svaret är kopierat');
+};
 ACT.fb = async el => {
   const m = findMsg(el.dataset.mid);
   if (!m) return;

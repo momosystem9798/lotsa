@@ -23,6 +23,38 @@ Här lämnar vi frågor och beslut till varandra. Skriv vem det riktar sig till 
 
 ---
 
+## 2026-11-22 – Version 2: strängare kontroll, lokal AI som väljer rader, och undersökning av lagkrav
+**Gren:** `claude/festive-hawking-4e5e5s` · **Av:** Claude-session på uppdrag av kollegan, i samarbete med Codex (OpenAI) som granskare och delvis utvecklare
+**Vad:**
+- *Undersökning:* `research_notes/Lotsa förbättringar 2026-11-22.md` tar upp liknande produkter, lagar och standarder (MDR/MDCG 2019-11, Läkemedelsverkets AI-vägledning, AI-förordningen, NIS2, CRA, tillgänglighet, upphovsrätt till manualer) och förbättringsförslag. Codex och en Claude-agent letade buggar oberoende av varandra (25 + 13 fynd).
+- *Molnet (A), `src/js/04-ai.js`, `05-ui.js`:*
+  - `strictQuote`: ellipscitat godkänns bara om delarna står i ordning, högst 200 tecken isär och utan negation, villkor eller tal i det utelämnade (`ELLIPS_RISK`). Träffen måste ligga i den text som skickades (7 000 tecken), men gränserna kontrolleras mot hela sidan.
+  - Som citat visas alltid manualens hela mening eller meningar (`sentStart`/`sentEnd`, `SENT_B`, `isAbbr`), så att ett "OBS:", "Never:" eller ett villkor efter en förkortning eller radbrytning inte kan tappas. Hittas ingen meningsgräns inom 1 500 tecken underkänns citatet. `strictSpan` (`03-text.js`) underkänner citat som klipper ett tal ("1" ur "1 200 ml/h").
+  - `unsupportedLines`: varje påstående måste ha ett kontrollerat citat. `claimConflicts`: raden får inte säga emot citatet (negation per mening och sats, tal med tecken, kod och enhet: `numsOf`, `UNITS`, `unitKey`, `REF_RE`).
+  - Inget strömmat AI-svar. Ogiltig JSON ger reservläget. "Hittade inget svar i de sökta avsnitten" när urvalet är ofullständigt. AI-märkning under källorna. Kopian bär varningarna.
+- *Larm:* AI-tolkade larm sparas eller visas inte längre (`alarmsOf`, `alarmEvidence`). `matchAlarm` väljer exakt kod före nollnormalisering (E7/E-07). `runAlarm` har löpnummer mot sena svar.
+- *Lokal AI (B):*
+  - ID-flöde: modellen väljer rad-id:n (`[S12]`), och skärmen visar manualens stycken med raderna markerade.
+  - Hela manualen skickas i samma ordning för prompt-cache, med `warmLocal` som förvärmning. `localLimits` utgår från `n_ctx`, och vid kontextfel görs ett nytt försök.
+  - Varningar markeras och hämtas ur hela avsnittet. Okända id:n ger reservläge.
+  - `local/start.mjs` har standardkontext 8192.
+- *Gemensamt:*
+  - Sökträffar visas medan AI:n arbetar. Avbryt fungerar direkt.
+  - Svar minns vilken uppladdning av manualen de byggde på (`rev`). Snabbkort binds till uppladdningen (`cardStale`) och kan inte godkännas på en ny manual.
+  - Nattläget visar bara godkända kort.
+  - Personnummer maskeras i uppladdad text (`maskPNR`).
+  - Fler PNR-format, fokusfälla i dialoger, CSV-formelskydd och plural- och textfixar (Codex patch A4–A6).
+- *Tester (`test/run.mjs`, `test/mock.js`):* nya eller omskrivna `moln-strikt`, `larm-utan-ai`, `lokal`, `lokal-strikt`, `lokal-kontext`, `lokal-avbruten`, `uppladdning-pnr`, `a456-enhet` med flera. Nya skärmbilder 39–42.
+- README: avsnitten "Hur svaren kontrolleras" och "Kända begränsningar i prototypen" är nya, och avsnittet om lokal AI är omskrivet.
+**Varför:** Kollegan bad Claude och Codex att tillsammans förbättra idén, leta buggar, kontrollera lagkrav och bygga en bättre version att jämföra med. Granskningarna visade att ett äkta citat kunde "styrka" ett svar som sa motsatsen, att AI-tolkade larmposter kunde skriva över granskade, och att nattläget visade ogranskade kort.
+**Testat:**
+- Hela sviten (`node run.mjs`) går igenom.
+- Riktig modell (Qwen3.5-4B Q4_K_M, 4 vCPU), `local/eval.mjs`, körd på en mellanversion. Senare ändringar är testade med testsvitens server-mock men inte med den riktiga modellen: 27/30 godkända (tidigare 25/30), citat 26/26, median 17,9 s (tidigare 36,3 s), längsta 67,3 s (första frågan utan förvärmning). Resultatet finns i `local/resultat/eval-v2-*`, där "v2" står i datorfältet.
+- Codex granskade i 15 omgångar. B (lokal AI) godkändes för prototyp i omgång 3 och A (molnets kontroller) i omgång 15. Omgång 4–14 hittade nya sätt att lura talkontrollen och citatgränserna (enheter, koder, hänvisningar, kapade tal, ellipser, förkortningar, flyttad negation). Varje fynd fick ett test. Codex slutomdöme: kvarvarande heuristiska missar är godtagbara för en prototyp med påhittade manualer som inte används kliniskt, eftersom README beskriver dem och källvisaren visar hela sidan.
+- Egna kontrollskript: 13 svenska parafraser ger inga falska varningar, och de avsiktliga felen fångas.
+- Hela sviten kördes om efter varje omgång och går igenom.
+**Kvar att göra / att veta:** Se "Kända begränsningar i prototypen" i README. Viktigast: utdrag kan vara ofullständiga, modellen avgör avvisning av patientfrågor, och OCR-bilder skickas före maskering. Inget är testat med riktiga sjukhusmanualer eller på sjukhusdatorer.
+
 ## 2026-11-22 – Startskript för Windows
 **Gren:** `claude/festive-hawking-4e5e5s` · **Av:** Claude-session på uppdrag av kollegan
 **Vad:**

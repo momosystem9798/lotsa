@@ -110,6 +110,12 @@ function toast(msg, kind = '') {
   setTimeout(() => el.remove(), kind === 'crit' ? 6500 : 3800);
 }
 const overlays = [];
+function overlayTabStops(node) {
+  return [...node.querySelectorAll('button,[href],input,textarea,select,[tabindex],[contenteditable],summary')]
+    .filter(el => el.tabIndex >= 0 && !el.matches(':disabled') && !el.closest('[inert]') &&
+      el.getClientRects().length && getComputedStyle(el).visibility === 'visible')
+    .sort((a, b) => (a.tabIndex || Infinity) - (b.tabIndex || Infinity));
+}
 function openOverlay(node, { onClose } = {}) {
   const prev = document.activeElement;
   $('#overlays').append(node);
@@ -125,13 +131,28 @@ function openOverlay(node, { onClose } = {}) {
     }
   };
   overlays.push(o);
-  const f = node.querySelector('[autofocus]') || node.querySelector('button,[href],input,textarea,select');
-  if (f) setTimeout(() => f.focus(), 30);
+  node.tabIndex = -1;
+  const stops = overlayTabStops(node);
+  (stops.find(el => el.hasAttribute('autofocus')) || stops[0] || node).focus();
   return o;
 }
 function closeAllOverlays() { [...overlays].reverse().forEach(o => o.close()); }
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && overlays.length) { e.preventDefault(); overlays[overlays.length - 1].close(); }
+  const overlay = overlays[overlays.length - 1];
+  if (!overlay) return;
+  if (e.key === 'Escape') { e.preventDefault(); overlay.close(); return; }
+  if (e.key !== 'Tab') return;
+  const stops = overlayTabStops(overlay.node), index = stops.indexOf(document.activeElement);
+  if (index < 0 || (e.shiftKey ? index === 0 : index === stops.length - 1)) {
+    e.preventDefault();
+    (stops[e.shiftKey ? stops.length - 1 : 0] || overlay.node).focus();
+  }
+});
+document.addEventListener('focusin', e => {
+  const overlay = overlays[overlays.length - 1];
+  if (overlay && !overlay.node.contains(e.target)) {
+    (overlayTabStops(overlay.node)[0] || overlay.node).focus();
+  }
 });
 function modal(tpl, { wide = false, onClose } = {}) {
   const s = document.createElement('div');

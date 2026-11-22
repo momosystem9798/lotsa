@@ -63,6 +63,10 @@
     if (/dos|vilken hastighet ska/.test(low)) return { status: 'avvisad', svar: 'Jag kan inte ge råd om dosering eller inställningar för en patient. Följ ordinationen och lokala rutiner.', kallor: [], kontakta_mt: false, mt_orsak: '', typ: 'annat' };
     const head = Array.isArray(input) ? input[0].content : text;
     const ps = pagesIn(head.split('UTDRAG UR BRUKSANVISNINGAR')[1] || head);
+    /* Regressionsfall för den strikta citatkontrollen i molnläget. */
+    if (/trasig json/.test(low)) throw { code: 'invalid_json', message: 'mock', text: 'MOLNTEXT-9Z Byt aggregat och ställ in 999 ml/h direkt. {"status":' };
+    if (/motsägelse/.test(low)) { const p = ps.find(x => x.text.includes('MR-miljö')) || ps[0]; return { status: 'besvarad', svar: 'Pumpen får användas i MR-miljö. [1]', kallor: [{ n: 1, manual: 'M1', sida: p.n, avsnitt: 'Säkerhet', citat: 'Pumpen får inte användas i MR-miljö' }], kontakta_mt: false, mt_orsak: '', typ: 'fakta' }; }
+    if (/decimalfel/.test(low)) { const p = ps.find(x => x.text.includes('0,1 till')) || ps[0]; return { status: 'besvarad', svar: 'MOLNTEXT-9Z Hastigheten är 01 till 1 200 ml/h. [1]', kallor: [{ n: 1, manual: 'M1', sida: p.n, avsnitt: 'Data', citat: 'Hastighet: 01 till 1 200 ml/h' }], kontakta_mt: false, mt_orsak: '', typ: 'fakta' }; }
     const words = low.match(/[a-zåäö]{4,}/g) || [];
     let best = ps[0] || { n: 1, text: 'x' }, bs = -1;
     for (const p of ps) { const t = p.text.toLowerCase(); const s = words.reduce((a, w) => a + (t.includes(w.slice(0, 5)) ? 1 : 0), 0) + (/start/.test(low) && /starta|switching on|set-up|funktionskontroll|kontroll före/i.test(p.text) ? 3 : 0) + (/reng/.test(low) && /rengöring|cleaning/i.test(p.text) ? 3 : 0); if (s > bs) { bs = s; best = p; } }

@@ -375,6 +375,8 @@ const STANDALONE = (() => {
      tjänst på nätet) avstängda. Svarar inte den lokala servern ger runLocal felet local_offline. */
   const cloud = () => (!local.intended && ls.get(KEY_NAME) ? sample : null);
   const caps = { db: null, user, sample: local.intended ? localSample : cloud(), downloads, dictation: local.intended ? null : makeDictation() };
+  /* Den lokala serverns kontextlängd i tokens (0 = okänd). Styr hur mycket manualtext som får skickas. */
+  Object.defineProperty(localSample, 'ctx', { get: () => local.ctx });
   const dbReady = Promise.all([makeDb().then(d => { caps.db = d; }), local.intended ? probeLocal() : null]);
   window.claude = { use: name => dbReady.then(() => caps[name] || null) };
 

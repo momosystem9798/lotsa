@@ -2,7 +2,7 @@
 // Allt körs på den egna datorn och bara på 127.0.0.1. Inget går ut på nätet.
 //
 //   node local/start.mjs --model sökväg/till/modell.gguf [--llama sökväg/till/llama-server]
-//                        [--port 8080] [--ctx 4096] [--threads 4] [--open]
+//                        [--port 8080] [--ctx 8192] [--threads 4] [--open]
 //
 // Sökvägarna kan också anges med miljövariablerna LOTSA_MODEL och LLAMA_SERVER.
 // Det här är prototypens startskript. I skrivbordsappen (Tauri) gör skalet samma sak.
@@ -17,7 +17,7 @@ const arg = (name, def) => { const i = process.argv.indexOf('--' + name); return
 const model = arg('model', process.env.LOTSA_MODEL);
 const llama = arg('llama', process.env.LLAMA_SERVER || 'llama-server');
 const port = arg('port', '8080');
-const ctx = arg('ctx', '4096');
+const ctx = arg('ctx', '8192');
 /* Fysiska kärnor ger bäst fart. Utan uppgift används antalet logiska kärnor, högst 8. */
 const threads = arg('threads', String(Math.min(8, cpus().length)));
 const openBrowser = process.argv.includes('--open'); /* öppna webbläsaren när modellen är laddad */

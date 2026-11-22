@@ -103,8 +103,14 @@ function strictSpan(text, quote, from = 0, to = Infinity) {
       const b = s[i - 1], a = s[i + q.length], a2 = s[i + q.length + 1];
       const before = b === undefined || /[\s"'(\[«]/.test(b);
       const after = a === undefined || /[\s"')\]»;:!?]/.test(a) || (/[.,]/.test(a) && !/[0-9]/.test(a2 || ''));
+      /* Ett citat får inte klippa ett tal: "The maximum flow is 1" ur "1 200 mL/h" eller "10" ur
+         "10 - 20 V". Slutar citatet på en siffra måste talet avsluta satsen, och börjar det på en
+         siffra får inget tal eller tecken stå direkt före. */
+      const rest = s.slice(i + q.length, i + q.length + 2);
+      const cutEnd = /\d$/.test(q) && !(rest === '' || /^[.,;:!?)\]»"'](?!\d)/.test(rest));
+      const cutStart = /^\d/.test(q) && /[\d.,+\-−–]/.test(s[i - 2] || '');
       const st = P.map[i], en = P.map[i + q.length - 1] + 1;
-      if (before && after && st >= from && en <= to) return { start: st, end: en };
+      if (before && after && !cutEnd && !cutStart && st >= from && en <= to) return { start: st, end: en };
     }
   }
   return null;
@@ -132,17 +138,29 @@ function snippetAround(text, range, span = 170) {
 }
 
 /* ----- Larmkoder ----- */
-const canonCode = s => String(s || '').toUpperCase().replace(/[^A-Z0-9ÅÄÖ]/g, '');
-const looksLikeCode = s => { const t = String(s || '').trim(); return t.length >= 2 && t.length <= 12 && /^[A-Za-z]{0,5}[\s\-.:]{0,2}\d{1,4}[A-Za-z]?$/.test(t); };
+const canonCode = s => String(s || '').toUpperCase().replace(/[^A-Z0-9ÅÄÖ]/g, '').replace(/\d+/g, n => n.replace(/^0+(?=\d)/, ''));
+const looksLikeCode = s => {
+  const text = String(s || '').trim();
+  return /^[A-ZÅÄÖ]{1,5}[\s\-.:]{0,2}\d{1,4}[A-ZÅÄÖ]?$/i.test(text) && !/^(?:PEEP|SIDA)[\s\-.:]*\d/i.test(text);
+};
 function codeRegex(code, flags = 'i') {
   const parts = canonCode(code).match(/[A-ZÅÄÖ]+|\d+/g) || [];
   if (!parts.length) return /$^/;
-  return new RegExp('(^|[^A-Za-z0-9])(' + parts.join('[\\s\\-.:]{0,2}') + ')(?![A-Za-z0-9])', flags);
+  const pattern = parts.map(p => /^\d/.test(p) ? '0*' + p : p).join('[\\s\\-.:]{0,2}');
+  return new RegExp('(^|[^\\p{L}\\p{N}])(' + pattern + ')(?![\\p{L}\\p{N}])', flags.includes('u') ? flags : flags + 'u');
 }
 function matchAlarm(alarms, code) {
   const c = canonCode(code);
   if (!c) return null;
-  for (const [key, entry] of Object.entries(alarms || {})) if (!entry.range && canonCode(key) === c) return { key, entry };
+  /* Exakt kod (bara skiljetecken och skiftläge ignoreras) går först. Inledande nollor (E7 = E-07)
+     godtas bara när det ger en enda träff, så att E7 och E-07 med olika betydelse aldrig blandas ihop. */
+  const raw = t => String(t || '').toUpperCase().replace(/[^A-Z0-9ÅÄÖ]/g, '');
+  const singles = Object.entries(alarms || {}).filter(([, e]) => !e.range);
+  const exact = singles.find(([key]) => raw(key) === raw(code));
+  if (exact) return { key: exact[0], entry: exact[1] };
+  const loose = singles.filter(([key]) => canonCode(key) === c);
+  if (loose.length === 1) return { key: loose[0][0], entry: loose[0][1] };
+  if (loose.length > 1) return null;
   const m = c.match(/^([A-ZÅÄÖ]*)(\d+)$/);
   if (m) for (const [key, entry] of Object.entries(alarms || {})) {
     if (entry.range && canonCode(entry.range[0]) === m[1] && Number(m[2]) >= entry.range[1] && Number(m[2]) <= entry.range[2]) return { key, entry };
@@ -181,15 +199,35 @@ const prioOf = p => PRIO[String(p || '').toLowerCase().replace('medelhög', 'med
 /* ----- Spärr för personnummer ----- */
 function findPNR(text) {
   const hits = [];
-  const re = /(^|\D)((?:19|20)?\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01]|6[1-9]|[78]\d|9[01])[-+ ]?(\d{4})(?!\d)/g;
-  let m;
-  while ((m = re.exec(String(text || '')))) {
-    const shown = m[0].slice(m[1].length);
-    const ten = (m[2].slice(-2) + m[3] + m[4] + m[5]).split('').map(Number);
+  const normalized = String(text || '').normalize('NFKC').replace(/[\p{Pd}−]/gu, '-');
+  const re = /(?<!\d)((?:\d{4}-\d{2}-\d{2}|\d{6}(?:\d{2})?))(\s*[-+./]\s*|\s+)?(\d{4})(?!\d)/g;
+  for (const [, date, separator, last] of normalized.matchAll(re)) {
+    const six = date.replace(/-/g, '').slice(-6);
+    if (!/^\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01]|6[1-9]|[78]\d|9[01])$/.test(six)) continue;
+    const ten = (six + last).split('').map(Number);
     const luhn = ten.reduce((s, d, i) => { let v = d * (i % 2 === 0 ? 2 : 1); if (v > 9) v -= 9; return s + v; }, 0) % 10 === 0;
-    if (luhn || /[-+]/.test(shown)) hits.push(shown);
+    if (luhn || separator || date.includes('-')) hits.push(date + (separator || '') + last);
   }
   return hits;
+}
+
+/* Ersätter allt som ser ut som personnummer med [borttaget]. Används på uppladdad manualtext innan
+   den skickas till AI:n eller sparas. Positionerna räknas i den normaliserade texten, som nästan
+   alltid är lika lång som originalet. Annars används den normaliserade texten. */
+function maskPNR(text) {
+  let out = String(text || ''), count = 0;
+  /* Varje varv tar bort en träff (siffrorna ersätts), så loopen tar alltid slut. */
+  for (;;) {
+    const h = findPNR(out)[0];
+    if (!h) break;
+    const norm = out.normalize('NFKC').replace(/[\p{Pd}−]/gu, '-');
+    if (norm.length !== out.length) out = norm;
+    const at = norm.indexOf(h);
+    if (at < 0) break;
+    out = out.slice(0, at) + '[borttaget]' + out.slice(at + h.length);
+    count++;
+  }
+  return { text: out, count };
 }
 
 /* ----- Svarstext till HTML: numrerade steg, punktlistor, fetstil och källmarkörer ----- */

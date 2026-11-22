@@ -62,28 +62,40 @@ V.hem = {
   }
 };
 ACT.hideIntro = () => { S.prefs.introHidden = true; savePrefs(); V.hem.update(); };
-INPUT.omni = el => {
+INPUT.omni = async el => {
   const q = el.value.trim(), out = $('#omniSug');
   if (!out) return;
-  if (!q) { setHTML(out, ''); return; }
+  setHTML(out, '');
+  if (!q || findPNR(q).length) return;
   const low = q.toLowerCase();
   const hits = devices().filter(d => [d.name, d.manufacturer, d.model, d.dept, d.inventoryNo].join(' ').toLowerCase().includes(low)).slice(0, 4);
-  const codeHits = looksLikeCode(q) ? devices().map(d => ({ d, hit: matchAlarm(alarmsOf(manualFor(d)), q) })).filter(x => x.hit) : [];
+  const evidence = !hits.length && isCodeQuery(q) ? await alarmEvidence(q) : null;
+  if (!out.isConnected || el.value.trim() !== q) return;
+  const codeHits = evidence ? evidence.results : [];
   setHTML(out, html`<div class="omni-sug">
-    ${codeHits.map(x => html`<button data-act="omniCode" data-code="${q}" data-id="${x.d.id}">${icon('bell')}<span><strong class="code">${x.hit.key}</strong> ${x.hit.entry.label || ''}</span><span class="sub">${x.d.name}</span></button>`)}
-    ${looksLikeCode(q) && !codeHits.length ? html`<button data-act="omniCode" data-code="${q}">${icon('bell')}<span>Slå upp larmkoden <strong class="code">${q.toUpperCase()}</strong></span><span class="sub">Alla enheter</span></button>` : ''}
+    ${codeHits.map(x => html`<button data-act="omniCode" data-code="${q}" data-id="${x.device.id}">${icon('bell')}<span><strong class="code">${x.key}</strong> ${x.entry.label || ''}</span><span class="sub">${x.device.name}</span></button>`)}
+    ${evidence?.textHits ? html`<button data-act="omniCode" data-code="${q}">${icon('bell')}<span>Slå upp larmkoden <strong class="code">${q.toUpperCase()}</strong></span><span class="sub">Alla enheter</span></button>` : ''}
     ${hits.map(d => html`<a href="#enhet-${d.id}">${icon('cat-' + (CATS[d.category] ? d.category : 'other'))}<span>${d.name}</span><span class="sub">${d.dept || ''}</span></a>`)}
-    ${!looksLikeCode(q) && q.length > 2 ? html`<button data-act="omniAsk">${icon('chat')}<span>Fråga manualerna: ”${trunc(q, 60)}”</span><span class="sub">Alla enheter</span></button>` : ''}
+    ${!codeHits.length && !evidence?.textHits && q.length > 2 ? html`<button data-act="omniAsk">${icon('chat')}<span>Fråga manualerna: ”${trunc(q, 60)}”</span><span class="sub">Alla enheter</span></button>` : ''}
   </div>`);
 };
 ACT.omniCode = el => { UI.pendingAlarm = { code: el.dataset.code, dev: el.dataset.id || '' }; location.hash = '#larm'; };
-ACT.omniAsk = () => { const q = $('#omni').value.trim(); if (!q) return; UI.pendingAsk = q; location.hash = '#fraga'; };
-FORM.omni = f => {
-  const q = f.elements.q.value.trim();
+ACT.omniAsk = () => {
+  const q = $('#omni').value.trim();
+  if (!q || findPNR(q).length) return;
+  UI.pendingAsk = q; location.hash = '#fraga';
+};
+FORM.omni = async f => {
+  const input = f.elements.q, q = input.value.trim();
   if (!q) return;
-  if (looksLikeCode(q)) { UI.pendingAlarm = { code: q, dev: '' }; location.hash = '#larm'; return; }
+  if (findPNR(q).length) { toast('Texten ser ut att innehålla ett personnummer. Ta bort det.', 'crit'); return; }
   const low = q.toLowerCase(), hits = devices().filter(d => [d.name, d.model].join(' ').toLowerCase().includes(low));
   if (hits.length === 1) { location.hash = '#enhet-' + hits[0].id; return; }
+  if (!hits.length && isCodeQuery(q)) {
+    const evidence = await alarmEvidence(q);
+    if (!input.isConnected || input.value.trim() !== q) return;
+    if (!evidence.notFound) { UI.pendingAlarm = { code: q, dev: '' }; location.hash = '#larm'; return; }
+  }
   UI.pendingAsk = q; location.hash = '#fraga';
 };
 
@@ -169,6 +181,7 @@ V.enhet = {
       return;
     }
     touchRecent(d.id);
+    warmLocal(d.id); /* lokal AI: läs in manualen i förväg så att första frågan går fortare */
     setHTML(el, html`<a class="back" href="#enheter">${icon('left', 'ic-s')}Utrustning</a><div id="devHead"></div><div class="tabs" role="tablist" id="devTabs"></div><div id="devPanel"></div>`);
     drawDevHead(d); drawDevTabs(d); drawDevPanel(d);
   },
@@ -204,14 +217,14 @@ function cardPanel(d, m) {
     return html`<div class="empty"><h3 class="h3">Inget snabbkort än</h3><p>${BRAND} sammanfattar uppstart, vanliga larm och rengöring ur manualen på ett kort som kan skrivas ut och sättas på enheten. En ansvarig granskar kortet först.</p>
       ${aiReady() ? html`<button class="btn btn-primary" data-act="cardMake" data-id="${d.id}">${icon('spark')}Skapa snabbkort ur manualen</button>` : html`<p class="hint">${S.aiNote || 'AI-svar är inte tillgängliga i den här visningen.'}</p>`}</div>`;
   }
-  const old = card.version && m.version && card.version !== m.version;
+  const old = cardStale(card, m);
   return html`
     ${old ? html`<div class="notice warn" style="margin-bottom:14px">${icon('clock')}<div><strong>Kortet bygger på en äldre manual</strong>Kortet gjordes från ${card.version}. Manualen är nu ${m.version}. Skapa om kortet.</div></div>` : ''}
-    ${card.status !== 'approved' ? html`<div class="notice" style="margin-bottom:14px">${icon('info')}<div><strong>Utkast som väntar på granskning</strong>Kortet är skapat av AI ur manualen. MT eller en ansvarig ska granska det mot manualen innan det sätts upp.${isAdmin() ? html`<br><button class="btn btn-s btn-primary" data-act="cardApprove" data-id="${d.id}">${icon('check', 'ic-s')}Godkänn för utskrift</button>` : ''}</div></div>` : ''}
+    ${card.status !== 'approved' ? html`<div class="notice" style="margin-bottom:14px">${icon('info')}<div><strong>Utkast som väntar på granskning</strong>Kortet är skapat av AI ur manualen. MT eller en ansvarig ska granska det mot manualen innan det sätts upp eller används steg för steg.${['uppstart', 'rengoring'].filter(k => card[k] && card[k].steg && card[k].steg.length && card[k].verified === false).map(k => html`<br><strong>Citatet för ${k === 'uppstart' ? 'start' : 'rengöring'} hittades inte i manualen.</strong> Kontrollera stegen extra noga.`)}${isAdmin() ? html`<br><button class="btn btn-s btn-primary" data-act="cardApprove" data-id="${d.id}">${icon('check', 'ic-s')}Godkänn för utskrift</button>` : ''}</div></div>` : ''}
     ${cardTpl(d, m, card)}
     <div class="rowflex mt14">
-      <button class="btn btn-primary" data-act="cardPdf" data-id="${d.id}" ${card.status === 'approved' ? '' : 'disabled'}>${icon('download')}Ladda ner för utskrift (PDF)</button>
-      ${card.uppstart.steg.length ? html`<button class="btn" data-act="cardSteps" data-id="${d.id}" data-k="uppstart">${icon('steps')}Starta steg för steg</button>` : ''}
+      <button class="btn btn-primary" data-act="cardPdf" data-id="${d.id}" ${card.status === 'approved' && !old ? '' : 'disabled'}>${icon('download')}Ladda ner för utskrift (PDF)</button>
+      ${card.uppstart.steg.length && card.status === 'approved' && !old ? html`<button class="btn" data-act="cardSteps" data-id="${d.id}" data-k="uppstart">${icon('steps')}Starta steg för steg</button>` : ''}
       ${aiReady() ? html`<button class="btn" data-act="cardMake" data-id="${d.id}">${icon('spark')}Skapa om ur manualen</button>` : ''}
     </div>
     <p class="hint mt8">${card.status === 'approved' ? (card.approvedAt ? 'Granskat ' + fmtDate(card.approvedAt) + '. ' : '') : 'Kortet kan skrivas ut när en ansvarig har godkänt det. '}Skapat ${fmtDate(card.madeAt)} från ${card.version || 'manualen'}.</p>`;
@@ -220,12 +233,13 @@ ACT.cardSrc = async el => {
   const m = manualById(el.dataset.m);
   if (!m || !m.card) return;
   const b = m.card[el.dataset.k], pages = await pagesOf(m);
-  const v = b.citat ? verifyQuote(pages, b.sida, b.citat) : { ok: false, page: b.sida };
+  const v = b.citat ? strictQuote(pages, b.sida, b.citat) : { ok: false, page: b.sida };
   openSource({ manualId: m.id, page: v.page || b.sida, range: v.range || null, section: b.avsnitt });
 };
 ACT.cardSteps = el => {
   const d = deviceById(el.dataset.id), m = manualFor(d);
-  if (!m || !m.card) return;
+  /* Bara granskade snabbkort får visas steg för steg. */
+  if (!m || !m.card || m.card.status !== 'approved' || cardStale(m.card, m)) return;
   const b = m.card[el.dataset.k];
   openSteps({ title: `${d.name}: ${el.dataset.k === 'uppstart' ? 'starta' : 'rengöring'}`, sub: `Ur snabbkortet, manual sida ${b.sida}`, steps: b.steg });
 };
@@ -236,18 +250,25 @@ ACT.cardMake = async el => {
   setHTML(el, html`${dots()} Läser manualen`);
   try {
     const card = await generateCard(d, m);
-    if (!card.uppstart.steg.length && !card.larm.length && !card.rengoring.steg.length) { toast('Manualen innehöll inget som passar ett snabbkort.', 'crit'); }
+    /* Byttes manualen ut medan kortet skapades sparas inget: utkastet hör till den gamla versionen. */
+    const now = await freshDoc(`manuals/${m.id}`); /* färsk läsning, inte bara den lokala kopian */
+    if (!now || (now.uploadedAt || 0) !== (m.uploadedAt || 0)) toast('Manualen byttes ut medan snabbkortet skapades. Skapa kortet igen.', 'crit');
+    else if (!card.uppstart.steg.length && !card.larm.length && !card.rengoring.steg.length) { toast('Manualen innehöll inget som passar ett snabbkort.', 'crit'); }
     else {
       await saveDoc('manuals', m.id, { card });
       audit('card', d.id, `Snabbkort skapat från ${m.version || 'manualen'}. Väntar på granskning.`);
       toast('Snabbkortet är skapat som utkast.');
     }
-  } catch (e) { const t = aiFail(e); if (t) toast(t, 'crit'); }
+  } catch (e) { toast(aiFail(e) || 'Snabbkortet kunde inte skapas. Försök igen.', 'crit'); }
   if (ROUTE.name === 'enhet' && ROUTE.id === d.id) drawDevPanel(deviceById(d.id));
 };
 ACT.cardApprove = async el => {
   const d = deviceById(el.dataset.id), m = manualFor(d);
   if (!m || !m.card) return;
+  /* Ett kort från en tidigare uppladdning av manualen får inte godkännas på den nya. */
+  let now;
+  try { now = await freshDoc(`manuals/${m.id}`); } catch (e) { toast('Manualen kunde inte kontrolleras just nu. Försök igen.', 'crit'); return; }
+  if (!now || !now.card || cardStale(now.card, now) || now.card.madeAt !== m.card.madeAt) { toast('Manualen eller kortet har ändrats. Skapa kortet igen innan det godkänns.', 'crit'); return; }
   await saveDoc('manuals', m.id, { card: { ...m.card, status: 'approved', approvedAt: Date.now(), approvedBy: S.uid || '' } });
   audit('card', d.id, 'Snabbkort godkänt för utskrift.');
   toast('Snabbkortet är godkänt.');
@@ -375,7 +396,7 @@ V.fraga = {
     if (UI.pendingAsk) { const q = UI.pendingAsk; UI.pendingAsk = ''; ask('alla', q); }
   }
 };
-ACT.clearChat = () => { CHATS.delete('alla'); V.fraga.render($('#view')); };
+ACT.clearChat = () => { const c = CHATS.get('alla'); if (c && c.ctl) c.ctl.abort(); CHATS.delete('alla'); V.fraga.render($('#view')); };
 
 /* ----- Larmkodsläge ----- */
 V.larm = {
@@ -467,10 +488,12 @@ function drawNightOut() {
     return;
   }
   if (k === 'ask') { setHTML(out, html`<div class="chat-log" id="log-${d.id}"></div>`); renderLog(d.id); return; }
-  const b = m.card && (k === 'start' ? m.card.uppstart : m.card.rengoring);
+  /* Nattläget använder bara granskade snabbkort som gäller nuvarande manual. Annars frågas manualen. */
+  const cardOk = m.card && m.card.status === 'approved' && !cardStale(m.card, m);
+  const b = cardOk && (k === 'start' ? m.card.uppstart : m.card.rengoring);
   if (b && b.steg && b.steg.length) {
     setHTML(out, html`<article class="msg-a"><div class="a-body"><ol>${b.steg.map(s => html`<li>${s}</li>`)}</ol></div>
-      <div class="a-meta"><span>Ur snabbkortet, manual sida ${b.sida} (${m.version || 'version saknas'})${m.card.status !== 'approved' ? '. Kortet är ett utkast som inte är granskat.' : ''}</span></div>
+      <div class="a-meta"><span>Ur snabbkortet, manual sida ${b.sida} (${m.version || 'version saknas'}), granskat${m.card.approvedAt ? ' ' + fmtDate(m.card.approvedAt) : ''}</span></div>
       <div class="a-actions"><button class="btn btn-primary" data-act="cardSteps" data-id="${d.id}" data-k="${k === 'start' ? 'uppstart' : 'rengoring'}">${icon('steps')}Steg för steg</button><button class="btn" data-act="cardSrc" data-m="${m.id}" data-k="${k === 'start' ? 'uppstart' : 'rengoring'}">${icon('book')}Visa i manualen</button>${aiReady() ? html`<button class="btn" data-act="nAI" data-k="${k}">Fråga efter fler detaljer</button>` : ''}</div></article>`);
     return;
   }

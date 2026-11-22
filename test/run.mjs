@@ -5,7 +5,6 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
 /* Sökvägar räknas från testmappen. Playwright och Chrome kan pekas ut med PLAYWRIGHT och CHROME. */
 const TEST = dirname(fileURLToPath(import.meta.url)), ROOT = dirname(TEST);
-const { chromium } = await import(process.env.PLAYWRIGHT || 'playwright').catch(() => import('/opt/npm-tools/node_modules/playwright/index.mjs'));
 const DIST = pathToFileURL(join(ROOT, 'dist/index.html')).href;
 const SHOTS = join(TEST, 'shots');
 mkdirSync(SHOTS, { recursive: true });
@@ -66,7 +65,7 @@ async function open(browser, { mock = {}, noClaude = false, viewport = { width: 
   return { ctx, page };
 }
 async function test(name, fn) {
-  if (only && !name.includes(only)) return;
+  if (only === '--enhet' ? !name.endsWith('-enhet') : only && !name.includes(only)) return;
   errors = [];
   const t0 = Date.now();
   try { await fn(); results.push([errors.length ? 'ERRORS' : 'ok', name, Date.now() - t0, errors.slice()]); }
@@ -76,9 +75,96 @@ const expect = (cond, msg) => { if (!cond) throw new Error('Förväntan: ' + msg
 const txt = async (page, sel) => (await page.locator(sel).first().innerText()).trim();
 const go = async (page, hash) => { await page.evaluate(h => { location.hash = h; }, hash); await page.waitForTimeout(120); };
 
+/* Enhetens skiftläge räknas: "mA" i manualen godtas inte som "MA" i citatet, och tvärtom. */
+await test('lokal-enhet', async () => {
+  const vm = await import('node:vm'), box = {};
+  vm.runInNewContext(readFileSync(join(TEST, '..', 'src/js/03-text.js'), 'utf8') + ';this.strictSpan = strictSpan;', box);
+  const r = [box.strictSpan('Ström högst 10 mA vid test.', 'Ström högst 10 MA vid test'), box.strictSpan('Ström högst 10 mA vid test.', 'ström högst 10 mA vid test'), box.strictSpan('Använd inte larmet!', 'Använd inte larmet?'), box.strictSpan('mA är inställd enhet.', 'MA är inställd enhet'), box.strictSpan('Temperatur −10 till 40 °C.', 'Temperatur -10 till 40 °C'), box.strictSpan('Temperatur −10 till 40 °C.', 'Temperatur −10 till 40 °C')];
+  expect(r[0] === null, 'mA och MA skiljs åt');
+  expect(r[1] === null, 'skiftläget gäller även första bokstaven');
+  expect(r[2] === null, 'skiljetecken i slutet måste stämma');
+  expect(r[3] === null, 'MA godtas inte för mA i början av citatet');
+  expect(r[4] === null, 'bindestreck godtas inte för minustecken');
+  expect(r[5] && r[5].start === 0, 'korrekt minustecken godtas');
+  const page = 'Håll avståndet minst 1,5 meter från patienten.';
+  expect(box.strictSpan(page, 'Håll avståndet minst 1', 0, 22) === null, 'ett utdrag som slutar mitt i 1,5 ger inget citat');
+  expect(box.strictSpan(page, 'Håll avståndet minst 1,5 meter', 0, 40) !== null, 'hela talet inom fönstret godtas');
+});
+
+await test('a456-enhet', async () => {
+  const vm = await import('node:vm');
+  const events = { addEventListener() {} };
+  const box = { V: {}, UI: {}, S: { caps: {} }, STANDALONE: null, document: events, window: events };
+  for (const file of ['01-util', '03-text', '04-ai', '05-ui', '07-admin']) {
+    vm.runInNewContext(readFileSync(join(ROOT, 'src/js', file + '.js'), 'utf8'), box);
+  }
+  const { findPNR, matchAlarm, codeRegex, csvCell, alarmEvidence, isCodeQuery } = box;
+  const looksLikeCode = vm.runInNewContext('looksLikeCode', box);
+  const maskPNR = vm.runInNewContext('maskPNR', box);
+  const masked = maskPNR('Patient 19900101-0017 och −20 °C, 900101–0017.');
+  expect(masked.count === 2 && !findPNR(masked.text).length && masked.text.includes('−20 °C'), 'personnummer maskeras och minustecknet behålls: ' + masked.text);
+  for (const value of ['９００１０１－００１７', '199001010017', '9001010017', '1990-01-01-0000',
+    ...['–', '—', '‑', '−', '.', '/', ' ', '+'].map(s => '900101' + s + '0000')]) {
+    expect(findPNR('Text: ' + value + '.').length === 1, 'spärrar formatet ' + value);
+  }
+  expect(findPNR('1990-01-01, 9001010000 och 1900101001700').length === 0, 'datum, kompakt tal med fel kontrollsiffra och längre tal släpps igenom');
+  const alarms = { 'E-07': { label: 'Testlarm' } };
+  for (const code of ['E7', 'E-7', 'E-07']) {
+    expect(matchAlarm(alarms, code)?.key === 'E-07', 'registret matchar ' + code);
+    expect(codeRegex(code).test('Larm E-07: testlarm'), 'manualen matchar ' + code);
+    expect(!codeRegex(code).test('Larm E-070, XE-07 och E-07A'), 'hela koden måste matcha');
+  }
+  /* E7 och E-07 med olika betydelse i samma register: exakt kod vinner, annars ingen gissning. */
+  const both = { 'E-07': { label: 'Sju med nolla' }, 'E7': { label: 'Sju utan nolla' } };
+  expect(matchAlarm(both, 'E7')?.key === 'E7' && matchAlarm(both, 'E-07')?.key === 'E-07', 'exakt kod väljs före nollnormalisering');
+  expect(matchAlarm(both, 'E007') === null, 'tvetydig nollnormalisering ger ingen träff');
+  expect(matchAlarm(alarms, 'E-8') === null, 'saknad kod i registret');
+  for (const value of ['PEEP 5', 'sida 12', '123']) expect(!looksLikeCode(value), 'ingen kod för ' + value);
+  const device = { name: 'Infusionspump Flow 300', model: 'Flow 300' };
+  Object.assign(box, {
+    devices: () => [device], manualFor: () => ({}),
+    pagesOf: async () => [{ n: 1, text: 'E-07: Testlarm' }]
+  });
+  const messages = [];
+  const fields = new Map([['what', 'Testfel'], ['code', '１９９０‑０１‑０１／００００']]);
+  Object.assign(box, {
+    FormData: function () { return fields; },
+    deviceById: () => device,
+    addDoc: () => { throw new Error('Felanmälan får inte sparas med personnummer i kodfältet'); }
+  });
+  vm.runInNewContext('toast = msg => messages.push(msg)', Object.assign(box, { messages }));
+  await vm.runInNewContext("FORM.report({ dataset: { id: 'test' } })", box);
+  expect(messages.some(msg => msg.includes('personnummer')), 'felanmälans kodfält kontrolleras före lagring');
+  expect(!isCodeQuery('Flow 300'), 'modellen behandlas som enhet');
+  expect((await alarmEvidence('E7')).textHits?.length === 1, 'en kod i manualen räcker som belägg');
+  expect((await alarmEvidence('E8')).notFound, 'saknad kod ger inget belägg');
+  box.manualFor = () => ({ alarms: both });
+  expect((await alarmEvidence('E7')).results[0]?.key === 'E7' && (await alarmEvidence('E-07')).results[0]?.key === 'E-07', 'larmuppslaget väljer exakt kod när E7 och E-07 båda finns');
+  box.manualFor = () => ({});
+  for (const value of ['=1+2', '  +1', '-1', '@SUM(A1)', '＝1', '\ttext', '\rtext', '\ntext']) {
+    expect(csvCell(value) === '"' + "'" + value + '"', 'CSV neutraliserar ' + JSON.stringify(value));
+  }
+  expect(csvCell('Text;"citat"') === '"Text;""citat"""', 'CSV behåller avgränsare och citattecken i samma cell');
+});
+
+if (only === '--enhet' || only.endsWith('-enhet')) finish();
+const { chromium } = await import(process.env.PLAYWRIGHT || 'playwright').catch(() => import('/opt/npm-tools/node_modules/playwright/index.mjs'));
 await makePdf();
 const CHROME = process.env.CHROME || (existsSync('/usr/bin/google-chrome') ? '/usr/bin/google-chrome' : '');
 const browser = await chromium.launch(CHROME ? { executablePath: CHROME, args: ['--no-sandbox'] } : {});
+
+await test('a5-omnisök', async () => {
+  const { ctx, page } = await open(browser);
+  for (const query of ['Vac 20', 'Flow 300', 'Aer 5', 'PEEP 5', 'sida 12', '123', 'Q-9999']) {
+    await page.fill('#omni', query);
+    await page.waitForSelector('#omniSug .omni-sug');
+    expect(await page.locator('#omniSug [data-act="omniCode"]').count() === 0, 'inget larmuppslag för ' + query);
+  }
+  await page.fill('#omni', 'Vac 20');
+  await page.keyboard.press('Enter');
+  await page.waitForURL(/#enhet-vac20$/);
+  await ctx.close();
+});
 
 await test('hem-desktop', async () => {
   const { ctx, page } = await open(browser);
@@ -128,11 +214,9 @@ await test('chatt-svar-kalla', async () => {
   await page.screenshot({ path: SHOTS + '/04-kalla.png' });
   await page.click('.drawer [data-pg="1"]');
   await page.keyboard.press('Escape');
-  await page.click('[data-act="stepsMsg"]');
-  await page.waitForSelector('.steps .steps-t');
-  await page.screenshot({ path: SHOTS + '/05-steg.png' });
-  await page.click('.steps [data-s="n"]'); await page.click('.steps [data-s="n"]'); await page.click('.steps [data-s="n"]');
-  expect(await page.locator('.steps').count() === 0, 'stegläge stängs efter sista steget');
+  /* Steg 3 pekar på ett påhittat citat: svaret är då inte styrkt och kan inte visas steg för steg. */
+  expect((await txt(page, '.msg-a')).includes('Svaret är inte styrkt med citat'), 'varning när ett påstående saknar kontrollerat citat');
+  expect(!(await page.locator('[data-act="stepsMsg"]').count()), 'ingen steg-för-steg-knapp för ostyrkt svar');
   await page.click('[data-act="fb"][data-v="1"]');
   await page.waitForTimeout(150);
   expect(await page.locator('[data-act="fb"][data-v="1"].is-on').count() === 1, 'tumme upp markerad');
@@ -178,6 +262,12 @@ await test('larm', async () => {
   await page.waitForSelector('.alarm-card');
   expect((await txt(page, '.alarm-card')).includes('OCKLUSION NEDSTRÖMS'), 'E-23 hittas utan bindestreck');
   await page.screenshot({ path: SHOTS + '/07-larm.png' });
+  /* Steg för steg ur ett granskat larmregister. */
+  await page.click('[data-act="alarmSteps"]');
+  await page.waitForSelector('.steps .steps-t');
+  await page.screenshot({ path: SHOTS + '/05-steg.png' });
+  for (let i = 0; i < 12 && (await page.locator('.steps').count()); i++) await page.click('.steps [data-s="n"]');
+  expect(await page.locator('.steps').count() === 0, 'stegläge stängs efter sista steget');
   await page.click('[data-act="alarmSrc"]');
   await page.waitForSelector('.drawer .paper mark');
   const mark = await txt(page, '.drawer .paper mark');
@@ -200,6 +290,17 @@ await test('larm', async () => {
   await page.keyboard.press('Escape');
   await page.click('[data-act="alarmReport"]');
   await page.fill('#rpWhat', 'REM-indikatorn lyser rött trots ny elektrod');
+  await page.fill('#rpCode', '１９９０‑０１‑０１／００００');
+  const submit = page.locator('.modal .btn-primary');
+  await submit.focus();
+  await page.keyboard.press('Tab');
+  expect(await page.locator('.modal [aria-label="Stäng"]').evaluate(el => el === document.activeElement), 'Tab stannar i dialogen');
+  await page.keyboard.press('Shift+Tab');
+  expect(await submit.evaluate(el => el === document.activeElement), 'Skift+Tab går till dialogens sista knapp');
+  await submit.click();
+  await page.waitForSelector('.toast.crit');
+  expect(await page.locator('form[data-form="report"]').count() === 1, 'personnummer i kodfältet stoppar felanmälan');
+  await page.fill('#rpCode', 'Err 11');
   await page.check('input[name="tried"] >> nth=0');
   await page.click('.modal .btn-primary');
   await page.waitForSelector('.modal textarea[readonly]');
@@ -328,6 +429,21 @@ await test('admin-vyer', async () => {
   await ctx.close();
 });
 
+/* Ett personnummer inne i en uppladdad textfil tas bort innan texten används. */
+await test('uppladdning-pnr', async () => {
+  const { ctx, page } = await open(browser, { hash: '#manualer' });
+  await page.evaluate(() => { document.querySelector('.rail [data-role="admin"]').click(); });
+  await page.waitForTimeout(150);
+  await go(page, '#manualer');
+  await page.click('.page-head [data-act="upload"]');
+  await page.setInputFiles('#upFile', { name: 'manual.txt', mimeType: 'text/plain', buffer: Buffer.from('Bruksanvisning Testpump\n\nAnslut nätkabeln. Testad på patient 19900101-0017 vid avdelning 4.\n\nRengör med fuktig duk.') });
+  await page.waitForSelector('.up-root .filecard', { timeout: 20000 });
+  const t = await txt(page, '.up-root .modal-b');
+  expect(t.includes('Personnummer togs bort ur texten') && !t.includes('19900101-0017'), 'användaren ser att personnumret togs bort: ' + t.slice(0, 200));
+  await page.screenshot({ path: SHOTS + '/41-pnr-uppladdning.png' });
+  await ctx.close();
+});
+
 await test('uppladdning', async () => {
   const { ctx, page } = await open(browser, { hash: '#manualer' });
   await page.evaluate(() => { document.querySelector('.rail [data-role="admin"]').click(); });
@@ -368,15 +484,17 @@ await test('uppladdning', async () => {
   await page.click('.shortcut >> nth=0');
   await page.waitForSelector('.msg-a .a-actions', { timeout: 8000 });
   expect((await txt(page, '.src >> nth=0')).includes('Citat kontrollerat'), 'citat verifieras mot uppladdad text');
-  // larm som inte finns i registret -> textsökning + AI
+  // larm som inte finns i registret -> manualens egen text, ingen AI-tolkning och inget sparas
   await page.click('[data-tab="larm"]');
   await page.fill('.alarm-input', 'Z-1');
   await page.click('.alarm-form .btn-primary');
-  await page.waitForSelector('.alarm-card', { timeout: 8000 });
-  expect((await txt(page, '.alarm-card')).includes('SENSORFEL'), 'AI-tolkat larm');
+  await page.waitForSelector('#devPanel .fallback-hit', { timeout: 8000 });
+  const zt = await txt(page, '#devPanel .fallback-hit');
+  expect(zt.includes('SENSORFEL') && zt.includes('Torka av sensorn'), 'larmstycket visas ordagrant: ' + zt.slice(0, 80));
+  expect(!(await page.locator('#devPanel .alarm-card').count()), 'inget AI-tolkat larmkort');
   await page.waitForTimeout(300);
   const man = await page.evaluate(() => [...window.__mockDocs].find(([k]) => /^manuals\/m-testpump[^/]+$/.test(k))[1]);
-  expect(man.alarms && Object.keys(man.alarms).length === 1, 'larm sparat i registret: ' + JSON.stringify(man.alarms));
+  expect(!man.alarms || !Object.keys(man.alarms).length, 'inget sparas i larmregistret: ' + JSON.stringify(man.alarms));
   expect(man.card && man.card.status === 'approved', 'kortstatus sparad');
   // ny version på exempelenhet
   await go(page, '#enhet-vac20');
@@ -690,20 +808,22 @@ await test('fristaende', async () => {
 /* Skrivbordsversionen: appen hittar en lokal llama-server och skickar frågan dit, aldrig till internet.
    localApi bygger en låtsasserver. make(text, utdragsId) ger modellens JSON (objekt) eller en råsträng,
    till exempel avbruten JSON. */
-const MARK = 'MODELLTEXT-7Q3';
-function localApi(make, { finish = 'stop' } = {}) {
+function localApi(make, { finish = 'stop', nCtx = 4096, tooLarge = 0 } = {}) {
   const reqs = [], other = [];
   const api = async route => {
     const r = route.request(), u = r.url();
     if (/api\.anthropic\.com/.test(u)) { other.push(u); return route.abort(); }
     if (r.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: CORS });
-    if (u.endsWith('/props')) return route.fulfill({ status: 200, headers: { ...CORS, 'content-type': 'application/json' }, body: JSON.stringify({ model_path: '/modeller/Testmodell-4B-Q4_K_M.gguf', default_generation_settings: { n_ctx: 4096 } }) });
+    if (u.endsWith('/props')) return route.fulfill({ status: 200, headers: { ...CORS, 'content-type': 'application/json' }, body: JSON.stringify({ model_path: '/modeller/Testmodell-4B-Q4_K_M.gguf', default_generation_settings: { n_ctx: nCtx } }) });
     const body = r.postDataJSON();
     reqs.push(body);
+    /* Låtsas att servern har mindre kontext än den uppgav: längre prompter avvisas. */
+    if (tooLarge && body.messages[0].content.length > tooLarge) return route.fulfill({ status: 400, headers: { ...CORS, 'content-type': 'application/json' }, body: JSON.stringify({ error: { message: 'the request exceeds the available context size' } }) });
     const text = body.messages.map(m => m.content).join('\n');
-    /* Id för det utdrag som innehåller en viss text. */
-    const idOf = needle => { const blk = text.split(/\n(?=\[U\d+\] )/).find(x => /^\[U\d+\] /.test(x) && x.includes(needle)); return blk ? blk.match(/^\[(U\d+)\]/)[1] : 'U1'; };
-    const out = make(text, idOf);
+    /* Id för den rad i prompten som innehåller en viss text, och alla id:n i samma stycke. */
+    const idOf = needle => { const m = text.split('\n').find(l => /^\[S\d+\] /.test(l) && l.includes(needle)); return m ? m.match(/^\[(S\d+)\]/)[1] : 'S1'; };
+    idOf.block = needle => { const blk = text.split(/\n(?=--- )/).find(b => b.includes(needle)) || ''; return [...blk.matchAll(/^\[(S\d+)\] (.*)$/gm)].map(m => ({ id: m[1], text: m[2] })); };
+    const out = body.max_tokens === 1 ? 'x' : make(text, idOf);
     const js = typeof out === 'string' ? out : JSON.stringify(out), half = Math.ceil(js.length / 2);
     const ev = d => 'data: ' + JSON.stringify({ choices: [{ delta: { content: d }, finish_reason: null }] }) + '\n\n';
     const fin = typeof finish === 'function' ? finish() : finish;
@@ -728,26 +848,30 @@ async function askChat(page, q) {
   await page.waitForFunction(n => document.querySelectorAll('.msg-a').length > n && !document.querySelector('.msg-a .typing'), n, { timeout: 8000 });
   return page.locator('.msg-a').last();
 }
-const ok = (id, citat, extra = {}) => ({ belagg: [{ utdrag: id, citat }], status: 'besvarad', svar: MARK + ' Så här gör du. [1]', kontakta_mt: false, mt_orsak: MARK, typ: 'fakta', ...extra });
+const ok = (ids, extra = {}) => ({ status: 'besvarad', rader: [].concat(ids), ...extra });
 
 await test('lokal', async () => {
-  const { api, reqs, other } = localApi((text, idOf) => ok(idOf('Anslut nätkabeln och kontrollera'), 'Anslut nätkabeln och kontrollera att nätlampan lyser', { typ: 'procedur' }));
+  const { api, reqs, other } = localApi((text, idOf) => ok([idOf('Anslut nätkabeln och kontrollera'), idOf('Tryck på PÅ/AV')]));
   const { ctx, page } = await localPage(api);
   expect(!(await txt(page, '#banner').catch(() => '')).includes('API-nyckel'), 'ingen banner om API-nyckel i lokalt läge');
+  await page.waitForTimeout(200);
+  const warm = reqs.find(r => r.max_tokens === 1);
+  expect(warm, 'manualen läses in i förväg när enheten öppnas');
   await page.click('.shortcut >> nth=0');
   await page.waitForSelector('.msg-a .a-actions', { timeout: 8000 });
   const shown = await txt(page, '.msg-a');
-  expect(shown.includes('Ur manualen, ordagrant') && shown.includes('Anslut nätkabeln och kontrollera att nätlampan lyser'), 'manualens egen text visas');
-  expect(!(await page.content()).includes(MARK), 'modellens fritext visas aldrig');
-  expect((await txt(page, '.msg-a .excerpt mark')).startsWith('Anslut nätkabeln'), 'citatet markeras i utdraget');
-  expect((await txt(page, '.src')).includes('Citat kontrollerat'), 'citatet kontrolleras mot manualen');
-  const main = reqs[reqs.length - 1];
+  expect(shown.includes('Ur manualen, ordagrant') && shown.includes('Urval gjort av AI'), 'utdraget är märkt som AI-urval av tillverkarens text');
+  expect((await txt(page, '.msg-a .excerpt mark >> nth=0')).startsWith('Anslut nätkabeln'), 'vald rad markeras i stycket');
+  expect((await page.locator('.msg-a .excerpt mark:not(.warn)').count()) === 2, 'två valda rader markeras');
+  expect((await txt(page, '.src')).includes('Citat kontrollerat'), 'källan är manualens egen text');
+  expect(await page.locator('.msg-a details.hits-more').count() === 1, 'sökträffarna finns kvar under svaret');
+  const main = reqs.filter(r => r.max_tokens !== 1).pop();
   const schema = main.response_format && main.response_format.json_schema && main.response_format.json_schema.schema;
-  expect(schema && schema.properties.belagg.items.properties.utdrag.enum.length > 0, 'JSON-schema med tillåtna utdrag skickas');
-  expect(Object.keys(schema.properties)[0] === 'belagg', 'beläggen skrivs före svaret (extrahera först)');
-  expect(main.chat_template_kwargs && main.chat_template_kwargs.enable_thinking === false && main.stream === true, 'tänkläge av och strömning på');
-  const sent = main.messages.map(m => m.content).join('\n');
-  expect(sent.length < 12000, 'underlaget hålls kort för en liten modell: ' + sent.length + ' tecken');
+  expect(schema && schema.properties.rader.items.enum.length > 20 && !schema.properties.svar, 'modellen får bara välja rad-id:n, ingen egen text');
+  expect(main.max_tokens <= 200, 'kort utdata: ' + main.max_tokens);
+  expect(main.messages[0].content.length / 2.4 + main.max_tokens < 4096, 'prompten ryms i serverns kontext (4096): ' + main.messages[0].content.length);
+  expect(main.messages[0].content.startsWith(warm.messages[0].content.replace(/Fråga: $/, '')), 'samma prompt som förvärmningen, så inläsningen återanvänds');
+  expect(main.chat_template_kwargs && main.chat_template_kwargs.enable_thinking === false, 'tänkläge av');
   expect(other.length === 0, 'inga anrop till Anthropic');
   await page.screenshot({ path: SHOTS + '/38-lokal.png' });
   await page.click('.rail [data-role="admin"]');
@@ -758,41 +882,84 @@ await test('lokal', async () => {
   await ctx.close();
 });
 
-/* Strikt citatkontroll: citat som inte står ordagrant i utdraget ger reservläget, aldrig ett "kontrollerat" svar. */
+/* Motsägelser och ogiltiga id:n ger reservläget. Varningar i stycket markeras alltid. */
 await test('lokal-strikt', async () => {
-  let mode = 'mr';
+  let mode = 'tom';
   const { api, other } = localApi((text, idOf) => {
-    if (mode === 'mr') return ok(idOf('MR-miljö'), 'Pumpen får användas i MR-miljö');
-    if (mode === 'decimal') return ok(idOf('1 200 ml/h'), 'Hastighet: 01 till 1 200 ml/h');
-    if (mode === 'motsagelse') return { ...ok(idOf('MR-miljö'), 'Pumpen får inte användas i MR-miljö'), status: 'saknas' };
-    if (mode === 'avvisad') return { belagg: [], status: 'avvisad', svar: MARK + ' Ge 5 ml/h.', kontakta_mt: false, mt_orsak: '', typ: 'annat' };
-    return ok(idOf('MR-miljö'), 'Pumpen får inte användas i MR-miljö');
+    if (mode === 'tom') return ok([]);
+    if (mode === 'okant') return ok(['S9999']);
+    if (mode === 'blandat') return ok([idOf('MR-miljö'), 'S9999']);
+    if (mode === 'motsagelse') return { status: 'saknas', rader: [idOf('MR-miljö')] };
+    if (mode === 'avvisad') return { status: 'avvisad', rader: [] };
+    if (mode === 'saknas') return { status: 'saknas', rader: [] };
+    /* En annan rad i samma stycke som OBS-raden om MR: OBS-raden ska ändå synas som varning. */
+    const blk = idOf.block('MR-miljö'), other = blk.find(x => !x.text.includes('MR-miljö'));
+    return ok(mode === 'granne' ? [other.id] : [idOf('MR-miljö')]);
   });
   const { ctx, page } = await localPage(api);
-  const check = async (q, what) => {
-    const a = await askChat(page, q), t = await a.innerText();
-    expect(t.includes('Reservläge') && t.includes('kunde inte styrka'), what + ': reservläget visas');
-    expect(!t.includes('Citat kontrollerat'), what + ': inget kontrollerat citat');
+  const fallback = async (q, what) => {
+    const t = await (await askChat(page, q)).innerText();
+    expect(t.includes('Reservläge') && !t.includes('Citat kontrollerat'), what + ': reservläget visas');
   };
-  await check('Får pumpen användas vid MR-undersökning?', 'MR-negationen');
-  mode = 'decimal'; await check('Vilket hastighetsområde har pumpen?', 'decimalen');
-  mode = 'motsagelse'; await check('Får pumpen användas i MR-miljö?', 'status saknas med belägg');
+  await fallback('Får pumpen användas vid MR-undersökning?', 'besvarad utan rader');
+  mode = 'okant'; await fallback('Får pumpen användas vid MR?', 'okänt id');
+  mode = 'motsagelse'; await fallback('Får pumpen användas i MR-miljö?', 'saknas med rader');
   mode = 'avvisad';
   let t = await (await askChat(page, 'Vilken hastighet ska min patient ha?')).innerText();
   expect(t.includes('Lotsa gör inga kliniska bedömningar'), 'fast text vid avvisad fråga');
+  mode = 'saknas';
+  t = await (await askChat(page, 'Hur kopplar jag pumpen till wifi?')).innerText();
+  expect(t.includes('Hittade inget svar'), 'fast text vid saknas');
   mode = 'ratt';
   t = await (await askChat(page, 'Får pumpen användas i MR-miljö?')).innerText();
-  expect(t.includes('Citat kontrollerat') && t.includes('får inte användas i MR-miljö'), 'ordagrant citat godtas: ' + t.slice(0, 120));
-  expect(!(await page.content()).includes(MARK), 'modellens fritext visas aldrig');
+  expect(t.includes('Citat kontrollerat') && t.includes('får inte användas i MR-miljö'), 'rätt rad visas: ' + t.slice(0, 120));
+  mode = 'blandat';
+  await fallback('Får pumpen användas nära MR?', 'ett giltigt och ett okänt id');
+  mode = 'granne';
+  const a = await askChat(page, 'Vad säger manualen om anestesigaser?');
+  expect((await a.locator('.excerpt mark.warn').count()) >= 1, 'OBS-raden i stycket markeras som varning');
+  await a.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: SHOTS + '/40-lokal-varning.png' });
   expect(other.length === 0, 'inga anrop till Anthropic');
   await ctx.close();
 });
 
+/* Liten kontext: bara utvalda stycken skickas. Avvisar servern prompten ändå provas ett mindre urval. */
+await test('lokal-kontext', async () => {
+  const pick = (text, idOf) => ok([idOf('MR-miljö')]);
+  let r = localApi(pick, { nCtx: 1200 });
+  let { ctx, page } = await localPage(r.api);
+  let t = await (await askChat(page, 'Får pumpen användas i MR-miljö?')).innerText();
+  const main = r.reqs.filter(x => x.max_tokens !== 1);
+  expect(t.includes('får inte användas i MR-miljö') && !r.reqs.some(x => x.max_tokens === 1), 'urval utan förvärmning vid liten kontext: ' + r.reqs.map(x => x.max_tokens).join(',') + ' ' + t.slice(0, 160));
+  expect(main[0].messages[0].content.length < 3000, 'prompten krymper efter kontexten: ' + main[0].messages[0].content.length);
+  await ctx.close();
+  r = localApi(pick, { tooLarge: 6500 });
+  ({ ctx, page } = await localPage(r.api));
+  t = await (await askChat(page, 'Får pumpen användas i MR-miljö?')).innerText();
+  expect(t.includes('får inte användas i MR-miljö') && !t.includes('Reservläge'), 'kontextfel ger ett nytt försök med mindre urval: ' + t.slice(0, 120));
+  errors = errors.filter(e => !/status of 400/.test(e)); /* det avsiktliga kontextfelet */
+  await ctx.close();
+  /* Styckning: en fristående VARNING-rad är ingen rubrik, och raden efter är en varning. */
+  const vm = await import('node:vm'), box = { S: { caps: {} } };
+  const ai = readFileSync(join(ROOT, 'src/js/04-ai.js'), 'utf8');
+  vm.runInNewContext(ai.slice(ai.indexOf('const WARN_RE'), ai.indexOf('async function buildLocalContext')) + ';this.c = chunksOf; this.u = unitsOf;', box);
+  const page4 = { n: 4, text: '4 Rengöring\n\nVARNING\nKoppla bort nätkabeln före rengöring.\n\nTorka pumpen med en fuktig duk.' };
+  const cs = box.c({ id: 'x' }, [page4]);
+  const units = cs.flatMap(c => box.u(c, page4.text));
+  expect(cs.every(c => c.section === '4 Rengöring'), 'VARNING blir inte en avsnittsrubrik');
+  expect(units.find(u => u.text.startsWith('Koppla bort')).warn && !units.find(u => u.text.startsWith('Torka')).warn, 'raden efter VARNING märks som varning');
+  const page5 = { n: 5, text: 'Rengöring av slangen sker enligt följande.\nVARNING\nKoppla bort nätkabeln före rengöring.\nDet gäller även batteridrift.\n\nTorka av.' };
+  const u5 = box.u({ start: page5.text.indexOf('Koppla'), end: page5.text.length }, page5.text);
+  expect(u5[0].warn && u5[1].warn && !u5[u5.length - 1].warn, 'etikett i föregående stycke och flerradig varning till tomraden: ' + JSON.stringify(u5.map(u => u.warn)));
+
+});
+
 await test('lokal-avbruten', async () => {
   /* Avbruten JSON, ett komplett objekt som ändå avbröts, slut utan slutbesked och text runt objektet. */
-  const full = idOf => ok(idOf('MR-miljö'), 'Pumpen får inte användas i MR-miljö');
+  const full = idOf => ok([idOf('MR-miljö')]);
   const cases = [
-    ['avbruten JSON', idOf => JSON.stringify(full(idOf)).slice(0, 90), 'length'],
+    ['avbruten JSON', idOf => JSON.stringify(full(idOf)).slice(0, 20), 'length'],
     ['komplett objekt men length', idOf => full(idOf), 'length'],
     ['inget slutbesked', idOf => full(idOf), null],
     ['text runt objektet', idOf => 'Här är svaret: ' + JSON.stringify(full(idOf)) + ' Klart.', 'stop']
@@ -804,25 +971,9 @@ await test('lokal-avbruten', async () => {
     const t = await (await askChat(page, 'Får pumpen användas i MR-miljö?')).innerText();
     expect(t.includes('Reservläge') && !t.includes('Citat kontrollerat'), cases[i][0] + ' ger reservläget');
   }
-  expect(!(await page.content()).includes(MARK), 'ingen modelltext visas');
   await ctx.close();
 });
 
-/* Enhetens skiftläge räknas: "mA" i manualen godtas inte som "MA" i citatet, och tvärtom. */
-await test('lokal-enhet', async () => {
-  const vm = await import('node:vm'), box = {};
-  vm.runInNewContext(readFileSync(join(TEST, '..', 'src/js/03-text.js'), 'utf8') + ';this.strictSpan = strictSpan;', box);
-  const r = [box.strictSpan('Ström högst 10 mA vid test.', 'Ström högst 10 MA vid test'), box.strictSpan('Ström högst 10 mA vid test.', 'ström högst 10 mA vid test'), box.strictSpan('Använd inte larmet!', 'Använd inte larmet?'), box.strictSpan('mA är inställd enhet.', 'MA är inställd enhet'), box.strictSpan('Temperatur −10 till 40 °C.', 'Temperatur -10 till 40 °C'), box.strictSpan('Temperatur −10 till 40 °C.', 'Temperatur −10 till 40 °C')];
-  expect(r[0] === null, 'mA och MA skiljs åt');
-  expect(r[1] === null, 'skiftläget gäller även första bokstaven');
-  expect(r[2] === null, 'skiljetecken i slutet måste stämma');
-  expect(r[3] === null, 'MA godtas inte för mA i början av citatet');
-  expect(r[4] === null, 'bindestreck godtas inte för minustecken');
-  expect(r[5] && r[5].start === 0, 'korrekt minustecken godtas');
-  const page = 'Håll avståndet minst 1,5 meter från patienten.';
-  expect(box.strictSpan(page, 'Håll avståndet minst 1', 0, 22) === null, 'ett utdrag som slutar mitt i 1,5 ger inget citat');
-  expect(box.strictSpan(page, 'Håll avståndet minst 1,5 meter', 0, 40) !== null, 'hela talet inom fönstret godtas');
-});
 
 /* Lokalt läge utan svarande server: molnet används aldrig, inte ens med en sparad nyckel.
    En adress utanför datorn i lotsa:localAi godtas inte. */
@@ -842,6 +993,160 @@ await test('lokal-nere', async () => {
   await page.waitForTimeout(400);
   expect(ext.length === 0, 'extern adress anropas inte');
   expect((await txt(page, '#banner').catch(() => '')).includes('API-nyckel'), 'extern adress ger inte lokalt läge');
+  await ctx.close();
+});
+
+/* Molnläget: strikt citatkontroll, ingen strömmad text, ogiltig JSON ger reservläget. */
+await test('moln-strikt', async () => {
+  const { ctx, page } = await open(browser, { hash: '#enhet-flow300', mock: { slow: 1500 } });
+  await page.click('[data-tab="fraga"]');
+  await page.fill('.composer textarea', 'Decimalfel: vilken infusionshastighet i ml/h klarar pumpen?');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(150);
+  expect(!(await page.content()).includes('MOLNTEXT-9Z') && (await page.locator('.msg-a .typing').count()) === 1, 'ingen AI-text visas medan svaret skrivs');
+  await page.waitForSelector('.msg-a .typing ~ .hits-live .fallback-hit', { timeout: 3000 });
+  expect((await page.locator('.msg-a .hits-live .fallback-hit').count()) >= 1, 'sökträffar visas medan AI:n arbetar');
+  await page.screenshot({ path: SHOTS + '/42-soktraffar-medan.png' });
+  await page.waitForSelector('.msg-a .a-actions', { timeout: 8000 });
+  let t = await txt(page, '.msg-a');
+  expect(t.includes('Citatet hittades inte') && !t.includes('Citat kontrollerat'), 'decimalfel underkänns: ' + t.slice(0, 120));
+  expect(t.includes('Svaret är inte styrkt med citat'), 'varning för ostyrkt svar');
+  /* Ett äkta citat får inte styrka ett svar som säger motsatsen. */
+  await page.fill('.composer textarea', 'En motsägelse om MR?');
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('.msg-a >> nth=1 >> .a-actions', { timeout: 8000 });
+  t = await txt(page, '.msg-a >> nth=1');
+  expect(t.includes('Citat kontrollerat') && t.includes('Svaret stämmer inte med citatet'), 'motsägelse mot äkta citat varnas: ' + t.slice(0, 160));
+  await page.locator('.msg-a >> nth=1').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: SHOTS + '/39-motsagelse.png' });
+  expect(!(await page.locator('.msg-a >> nth=1 >> [data-act="stepsMsg"]').count()), 'ingen stegvisning');
+  await page.fill('.composer textarea', 'Ge mig trasig json');
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('.msg-a >> nth=2 >> .notice', { timeout: 8000 });
+  t = await txt(page, '.msg-a >> nth=2');
+  expect(t.includes('Reservläge') && !t.includes('999 ml/h'), 'ogiltig JSON ger reservläget utan AI-text: ' + t.slice(0, 120));
+  await ctx.close();
+  /* Enhetstest av strictQuote: alla delar av ett citat med ellips måste stå i ordning på sidan. */
+  const vm = await import('node:vm'), box = {};
+  const ai = readFileSync(join(ROOT, 'src/js/04-ai.js'), 'utf8'), fn = ai.slice(ai.indexOf('const ELLIPS_GAP'), ai.indexOf('function normalizeAnswer('));
+  vm.runInNewContext(readFileSync(join(ROOT, 'src/js/03-text.js'), 'utf8') + ';' + fn + ';this.q = strictQuote; this.cc = claimConflicts;', box);
+  const pages = [{ n: 1, text: 'Förvaring: -20 °C till 40 °C.' }, { n: 2, text: 'Håll avståndet minst 1,5 meter. Rengör med 70 % alkohol och låt ytan torka helt.' }];
+  expect(!box.q(pages, 1, 'Förvaring: 20 °C till 40 °C').ok, 'minustecknet måste stämma');
+  expect(!box.q(pages, 2, 'Håll avståndet minst 15 meter').ok, '15 godtas inte för 1,5');
+  expect(!box.q(pages, 2, 'Rengör med 70 % alkohol ... spädd med vatten 1:10').ok, 'påhittad del efter ellips underkänns');
+  const okq = box.q(pages, 1, 'Rengör med 70 % alkohol ... låt ytan torka helt');
+  expect(okq.ok && okq.page === 2 && okq.text === 'Rengör med 70 % alkohol och låt ytan torka helt.', 'äkta citat med ellips godkänns, flyttas till rätt sida och visas som hela meningen');
+  /* Omgång 11: hela meningen visas alltid, även över kolon och radbrytning, och gränsen 7000 tecken klipper inget tal. */
+  const v12 = box.q([{ n: 1, text: 'Never: start the test sequence while charging.' }], 1, '… start the test sequence while charging.');
+  expect(v12.ok && v12.text.startsWith('Never:'), 'citat som börjar mitt i en mening visas med början (Never:)');
+  const v13 = box.q([{ n: 1, text: 'Start the test sequence\nonly when the lid is closed.' }], 1, 'Start the test sequence …');
+  expect(v13.ok && v13.text.endsWith('lid is closed.'), 'villkor på nästa rad visas');
+  const long = 'x '.repeat(3480) + 'The maximum flow is 1 200 mL/h.', at = long.indexOf('1 200');
+  expect(!box.q([{ n: 1, text: long }], 1, 'The maximum flow is 1', at + 1).ok, 'tal som kapas av teckengränsen godkänns inte');
+  /* Omgång 12: förkortningar avslutar inte meningen, och en mening som inte ryms underkänns hellre än klipps. */
+  const v14 = box.q([{ n: 1, text: 'Ställ in väntetiden på 5 sek.\nendast när locket är stängt.' }], 1, 'Ställ in väntetiden på 5 sek.');
+  expect(v14.ok && v14.text.endsWith('locket är stängt.'), 'punkt i en förkortning avslutar inte meningen');
+  const huge = 'Intro. Never start the test with any of these: ' + 'adapter, '.repeat(200) + 'or the cradle.';
+  expect(!box.q([{ n: 1, text: huge }], 1, 'adapter, adapter, or the cradle.').ok, 'citat ur en mening som är för lång för att visas hel underkänns');
+  expect(box.cc('Anslut nätkabeln. [1]', [{ n: 1, ok: true, quote: 'Anslut nätkabeln, men starta inte testet.' }]).length === 0, 'negation i en annan sats ger ingen falsk varning');
+  /* Omgång 13: förkortningar före siffra eller versal, och negation som flyttats till fel sats. */
+  const v15 = box.q([{ n: 1, text: 'Kör testet i ca. 5 minuter och endast när locket är stängt.' }], 1, 'Kör testet i ca.');
+  expect(!v15.ok || v15.text.endsWith('locket är stängt.'), '"ca." avslutar inte meningen');
+  const qs = [{ n: 1, ok: true, quote: 'Anslut nätkabeln, men starta inte testsekvensen.' }];
+  expect(box.cc('Koppla inte in sladden och starta testsekvensen. [1]', qs).length === 1, 'negation som flyttats till fel sats upptäcks');
+  expect(box.cc('Anslut nätkabeln och vänta, men starta inte testsekvensen. [1]', qs).length === 0, 'rätt negation i rätt sats godkänns');
+  /* Omgång 14: okänd förkortning, och ordagrann återgivning med "och" och blandad polaritet. */
+  const v16 = box.q([{ n: 1, text: 'Använd i serviceläget alt. A endast när locket är stängt.' }], 1, 'Använd i serviceläget alt.');
+  expect(!v16.ok || v16.text.endsWith('locket är stängt.'), 'kort ord med punkt avslutar inte meningen');
+  expect(box.cc('Anslut nätkabeln och starta inte testsekvensen. [1]', [{ n: 1, ok: true, quote: 'Anslut nätkabeln och starta inte testsekvensen.' }]).length === 0, 'ordagrann återgivning med blandad polaritet ger ingen falsk varning');
+  /* Omgång 10: ellipsen får inte dölja ett förbud, och citatet får inte klippa ett tal. */
+  const q1 = (text, quote) => box.q([{ n: 1, text }], 1, quote);
+  const p10 = 'Connect the power cable. No start is permitted during charging. Start the test sequence.';
+  const v10 = q1(p10, 'Connect the power cable … Start the test sequence.');
+  expect(!v10.ok || v10.text === p10, 'ellips över ett förbud underkänns eller visas med hela texten');
+  expect(!q1('Håll knappen intryckt i minst 10 sekunder. Släpp sedan knappen.', 'Håll knappen intryckt … Släpp sedan knappen.').ok, 'ellips över ett tal underkänns');
+  const v11 = q1('Start the test sequence only when the lid is closed.', 'Start the test sequence …');
+  expect(v11.ok && v11.text === 'Start the test sequence only when the lid is closed.', 'ellips sist förlängs till meningens slut');
+  expect(!q1('The maximum flow is 1 200 mL/h.', 'The maximum flow is 1').ok, 'citatet får inte sluta mitt i ett tusentalsgrupperat tal');
+  expect(!q1('The range starts at 10 - 20 V on this model.', 'The range starts at 10').ok, 'citatet får inte klippa ett intervall');
+  expect(q1('Larmgränsen är 120. Tryck OK.', 'Larmgränsen är 120').ok, 'tal som avslutar meningen godkänns');
+  expect(q1('Connect the power cable. Do not run the test. Start the test sequence. Connect the power cable. Check the light. Start the test sequence.', 'Connect the power cable … Start the test sequence.').ok, 'en giltig senare träff prövas när den första underkänns');
+  const p3 = [{ n: 3, text: 'Koppla bort nätkabeln. Starta inte om pumpen förrän service har kontrollerat den. Starta om pumpen.' }];
+  expect(!box.q(p3, 3, 'Koppla bort nätkabeln ... Starta om pumpen').ok, 'ellips över en negation underkänns');
+  const p4 = [{ n: 4, text: 'Tryck på PÅ/AV-knappen i två sekunder. ' + 'Lång text om något annat här. '.repeat(10) + 'Displayen tänds och visar startbilden.' }];
+  expect(!box.q(p4, 4, 'Tryck på PÅ/AV-knappen ... Displayen tänds och visar').ok, 'ellips över för lång text underkänns');
+  /* Andra kontrollen: påståendet får inte säga emot citatet. */
+  const k = [{ n: 1, ok: true, quote: 'Pumpen får inte användas i MR-miljö.' }, { n: 2, ok: true, quote: 'Hastighet: 0,1 till 1 200 ml/h.' }];
+  expect(box.cc('Pumpen får användas i MR-miljö. [1]', k).length === 1, 'motsägelse (negation saknas) upptäcks');
+  expect(box.cc('Pumpen får inte användas i MR-miljö. [1]', k).length === 0, 'rätt återgivning godkänns');
+  expect(box.cc('Högsta hastighet är 1 500 ml/h. [2]', k).length === 1, 'tal som inte står i citatet upptäcks');
+  expect(box.cc('1. Hastigheten kan ställas från 0,1 till 1 200 ml/h, se sidan 9. [2]', k).length === 0, 'stegnummer och sidhänvisning räknas inte som tal');
+  const k2 = [{ n: 1, ok: true, quote: 'Förvaring: −20 °C till 40 °C.' }, { n: 2, ok: true, quote: 'Anslut nätkabeln. Starta inte pumpen ännu.' }];
+  expect(box.cc('Förvara pumpen vid +20 °C. [1]', k2).length === 1, 'tecknet på talet räknas (+20 mot −20)');
+  expect(box.cc('Förvara pumpen från −20 °C. [1]', k2).length === 0, 'rätt tecken godkänns');
+  expect(box.cc('Anslut först nätkabeln. [2]', k2).length === 0, 'negation i en annan mening i citatet ger ingen falsk varning');
+  const k3 = [{ n: 1, ok: true, quote: 'Ställ in 10 ml/h och kontrollera efter 5 min.' }];
+  const k4 = [{ n: 1, ok: true, quote: 'Larm E-23: kontrollera 10 mV och 120\u2009mmHg efter 10 minuter.' }];
+  const c1 = (claim, quote) => box.cc(claim + ' [1]', [{ n: 1, ok: true, quote }]).length;
+  expect(c1('Förvara vid 20 °C.', 'Förvara vid − 20 °C.') === 1, 'minustecken med mellanslag räknas');
+  expect(c1('Store at +20 °C.', 'Store at 20 °C.') === 0, '+20 är samma tal som 20');
+  expect(c1('Larm E\u201123 visas.', 'Larm F\u201123 visas.') === 1, 'koder med hårt bindestreck skiljs åt');
+  expect(c1('Flödet ökas i steg 1  200 ml/h.', 'Flödet ökas i steg 2  200 ml/h.') === 1, 'dubbla mellanslag i tusental');
+  expect(c1('Använd 0,50 kg.', 'Använd 0,5 kg.') === 0, 'avslutande decimalnolla ger samma tal');
+  expect(c1('Alarm E-2.10 indicates a fault.', 'Alarm E-2.1 indicates a fault.') === 1, 'decimalnollan i en larmkod räknas');
+  expect(c1('Set the delay to 5 msec.', 'Set the delay to 5 s.') === 1 && c1('Wait 5 minutes.', 'Wait 5 min.') === 0, 'engelska enhetsord');
+  expect(c1('Open the service cover.', 'Opening the service cover is prohibited.') === 1 && c1('Öppna panelen.', 'Panelen får icke öppnas.') === 1, 'prohibited och icke är negationer');
+  expect(box.cc('Ställ in 10 ml / min. [1]', k3).length === 1, 'fel enhet med mellanslag runt snedstrecket upptäcks');
+  expect(box.cc('Kontrollera 10 V. [1]', k4).length === 1, 'mV och V är olika enheter');
+  expect(box.cc('Larm F-23 betyder att 10 mV ska kontrolleras. [1]', k4).length === 1, 'E-23 och F-23 är olika koder');
+  expect(box.cc('Vid E-23: kontrollera 10 mV och 120 mmHg efter 10min. [1]', k4).length === 0, 'kod, tunt mellanslag och 10min/10 minuter godkänns');
+  /* Vanlig svensk meningsbyggnad får inte ge falska varningar. */
+  const k5 = [{ n: 1, ok: true, quote: 'Välj läge 2 på displayen. Tryck 3 ggr på OK. Trycket ska vara 120 mmHg.' }];
+  expect(box.cc('Läge 2 aktiverar testet. [1]', k5).length === 0, 'ett vanligt ord efter talet är ingen enhet');
+  expect(box.cc('Tryck 3 gånger på OK. [1]', k5).length === 0, '3 gånger och 3 ggr är samma');
+  expect(box.cc('Trycket ska vara 120  cmHg. [1]', k5).length === 1, 'fel enhet efter två mellanslag upptäcks');
+  const k6 = [{ n: 1, ok: true, quote: 'Välj port 2 (A). Dosen är 10 mg/m² och spänningen 10 mV. Fyll 5 mL.' }];
+  expect(box.cc('Välj port 2 A. [1]', k6).length === 0, 'bokstavsbeteckning efter talet ger ingen falsk varning');
+  expect(box.cc('Dosen är 10 mg/cm². [1]', k6).length === 1, 'mg/cm² och mg/m² skiljs');
+  expect(box.cc('Spänningen är 10 MV. [1]', k6).length === 1, 'MV och mV skiljs');
+  expect(box.cc('Fyll 5 ml och välj 10 mg/m2. [1]', k6).length === 0, 'ml = mL och m2 = m²');
+  const k7 = [{ n: 1, ok: true, quote: 'Vänta 5 min. Kalium 10 mmol. Koncentration 10 mg/mL².' }];
+  expect(box.cc('Vänta 5 h. [1]', k7).length === 1, 'h och min skiljs');
+  expect(box.cc('Kalium 10 Mmol. [1]', k7).length === 1, 'Mmol och mmol skiljs');
+  expect(box.cc('Koncentration 10 mg/ml². [1]', k7).length === 0, 'mL² = ml²');
+  expect(box.cc('Vänta 5 minuter. Kalium 10 mmol. [1]', k7).length === 0, 'minuter = min');
+  expect(box.cc('Flödet ökas i steg 5 ml/min. [1]', [{ n: 1, ok: true, quote: 'Flödet ökas i steg 5 ml/h.' }]).length === 1, 'steg med enhet är ett mätvärde');
+  expect(box.cc('Flödet ökas i steg 1 200 ml/h. [1]', [{ n: 1, ok: true, quote: 'Flödet ökas i steg 2 200 ml/h.' }]).length === 1, 'tusentalsavgränsat tal efter steg är ett mätvärde');
+  expect(box.cc('Gör steg 3 igen. [1]', [{ n: 1, ok: true, quote: '3. Kontrollera displayen.' }]).length === 0, 'steg 3 är en hänvisning');
+  expect(box.cc('Ställ in 10 ml/min. [1]', k3).length === 1, 'fel enhet (ml/min mot ml/h) upptäcks');
+  expect(box.cc('Ställ in 10 ml/h och vänta 5 min. [1]', k3).length === 0, 'rätt tal och enheter godkänns');
+  expect(box.cc('Ställ in 10 och kontrollera. [1]', k3).length === 0, 'tal utan enhet jämförs bara som tal');
+  expect(!box.q([{ n: 6, text: 'Starta om pumpen förutsatt att teknikern har godkänt det och kontrollera sedan displayen.' }], 6, 'Starta om pumpen ... kontrollera sedan displayen').ok, 'ellips över förutsatt underkänns');
+  expect(!box.q([{ n: 5, text: 'Starta om pumpen om teknikern har godkänt det och kontrollera sedan displayen.' }], 5, 'Starta om pumpen ... kontrollera sedan displayen').ok, 'ellips över ett om-villkor underkänns');
+});
+
+/* Larm: AI-tolkade poster som ingen granskat visas inte, och uppslag sparar aldrig något. */
+/* Ett godkänt snabbkort från en tidigare uppladdning av manualen får inte skrivas ut eller visas steg för steg. */
+await test('snabbkort-inaktuellt', async () => {
+  const { ctx, page } = await open(browser, { hash: '#enhet-flow300', mock: { seed: { 'manuals/m-flow300': { card: { status: 'approved', version: 'Rev D', rev: 12345, madeAt: 1, approvedAt: 2, uppstart: { steg: ['Anslut nätkabeln.', 'Tryck på PÅ/AV.'], sida: 4, avsnitt: '3.2', citat: '' }, rengoring: { steg: ['Torka av.'], sida: 9, avsnitt: '7', citat: '' }, larm: [], viktigt: [] } } } } });
+  await page.click('[data-tab="kort"]');
+  await page.waitForSelector('.qcard');
+  const t = await page.locator('main').innerText();
+  expect(t.includes('Kortet bygger på en äldre manual'), 'varning för inaktuellt kort: ' + t.slice(0, 200));
+  expect(await page.locator('[data-act="cardPdf"][disabled]').count() === 1, 'utskrift spärrad');
+  expect(await page.locator('.qcard ~ * [data-act="cardSteps"], [data-act="cardSteps"]').count() === 0, 'ingen stegvisning');
+  await ctx.close();
+});
+
+await test('larm-utan-ai', async () => {
+  /* Som om en äldre version hade sparat en AI-tolkad post över den granskade E-23. */
+  const { ctx, page } = await open(browser, { hash: '#larm', mock: { seed: { 'manuals/m-flow300': { alarms: { 'E-23': { kod: 'E-23', label: 'FALSK AI-POST', prio: 'låg', atgard: ['Ignorera larmet.'], ai: true, verified: true, sida: 7 } } } } } });
+  await page.fill('.alarm-input', 'E23');
+  await page.click('.alarm-form .btn-primary');
+  await page.waitForSelector('#alOut .msg-a, #alOut .alarm-card', { timeout: 8000 }).catch(() => {});
+  const t = await page.locator('main').innerText();
+  expect(!t.includes('FALSK AI-POST') && !t.includes('Ignorera larmet'), 'ogranskad AI-post visas inte');
+  expect(t.includes('OCKLUSION'), 'manualens egen text för E-23 visas: ' + t.slice(0, 200));
   await ctx.close();
 });
 
@@ -882,10 +1187,14 @@ await test('om-ljust', async () => {
 });
 
 await browser.close();
-let bad = 0;
-for (const [st, name, ms, errs] of results) {
-  console.log(`${st.padEnd(7)} ${name} (${ms} ms)`);
-  if (st !== 'ok') { bad++; errs.forEach(e => console.log('   ' + e.split('\n').join('\n   '))); }
+finish();
+
+function finish() {
+  let bad = 0;
+  for (const [st, name, ms, errs] of results) {
+    console.log(`${st.padEnd(7)} ${name} (${ms} ms)`);
+    if (st !== 'ok') { bad++; errs.forEach(e => console.log('   ' + e.split('\n').join('\n   '))); }
+  }
+  console.log(bad ? `\n${bad} test med problem` : '\nAlla tester gick igenom');
+  process.exit(bad ? 1 : 0);
 }
-console.log(bad ? `\n${bad} test med problem` : '\nAlla tester gick igenom');
-process.exit(bad ? 1 : 0);

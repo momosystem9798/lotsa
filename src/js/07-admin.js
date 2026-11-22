@@ -364,7 +364,7 @@ V.manualer = {
 
 /* ----- Logg ----- */
 UI.logTab = 'q'; UI.logDev = ''; UI.logSt = '';
-const ST_LABEL = { ok: ['Ur manualen', 'b-ok'], delvis: ['Delvis', 'b-warn'], saknas: ['Saknas i manualen', 'b-warn'], avvisad: ['Avvisad, klinisk fråga', 'b-crit'], reserv: ['Reservläge', ''] };
+const ST_LABEL = { ok: ['Ur manualen', 'b-ok'], urval: ['AI-urval ur manualen', 'b-ok'], ostyrkt: ['Inte styrkt', 'b-warn'], delvis: ['Delvis', 'b-warn'], saknas: ['Saknas i manualen', 'b-warn'], avvisad: ['Avvisad, klinisk fråga', 'b-crit'], reserv: ['Reservläge', ''] };
 const AUDIT_LABEL = { manual: 'Manual', tip: 'Tips', card: 'Snabbkort', flag: 'Flagga', report: 'Felanmälan', settings: 'Inställning', device: 'Enhet' };
 async function logRows() {
   const rows = (await loadLogs()).map(r => ({ ...r }));
@@ -407,9 +407,14 @@ V.logg = {
 ACT.logTab = el => { UI.logTab = el.dataset.tab; V.logg.render($('#view')); };
 CHANGE.logDev = el => { UI.logDev = el.value; V.logg.load(); };
 CHANGE.logSt = el => { UI.logSt = el.value; V.logg.load(); };
+function csvCell(value) {
+  const text = String(value ?? '');
+  const prefix = /^(?:[\t\r\n]|[\s\p{Cf}]*[=+\-@＝＋－＠])/u.test(text) ? "'" : '';
+  return '"' + prefix + text.replace(/"/g, '""') + '"';
+}
 ACT.logCsv = async () => {
-  const rows = await logRows(), q = s => '"' + String(s ?? '').replace(/"/g, '""') + '"';
-  const csv = '﻿' + ['Tid;Enhet;Fråga;Typ;Utfall;MT-hänvisning;Omdöme;Exempeldata'].concat(rows.map(r => [dayKey(new Date(r.t)) + ' ' + fmtTime(r.t), (deviceById(r.d) || {}).name || '', r.q, KINDS[r.k] || 'Övrigt', (ST_LABEL[r.st] || ST_LABEL.ok)[0], r.mt ? 'Ja' : '', r.fb === 1 ? 'Upp' : r.fb === -1 ? 'Ned' : '', r.demo ? 'Ja' : ''].map(q).join(';'))).join('\r\n');
+  const rows = await logRows();
+  const csv = '﻿' + ['Tid;Enhet;Fråga;Typ;Utfall;MT-hänvisning;Omdöme;Exempeldata'].concat(rows.map(r => [dayKey(new Date(r.t)) + ' ' + fmtTime(r.t), (deviceById(r.d) || {}).name || '', r.q, KINDS[r.k] || 'Övrigt', (ST_LABEL[r.st] || ST_LABEL.ok)[0], r.mt ? 'Ja' : '', r.fb === 1 ? 'Upp' : r.fb === -1 ? 'Ned' : '', r.demo ? 'Ja' : ''].map(csvCell).join(';'))).join('\r\n');
   saveFile('lotsa-fragelogg.csv', csv, () => copyText(csv, 'Loggen är kopierad som CSV'));
 };
 
@@ -448,6 +453,7 @@ V.installningar = {
 };
 FORM.settings = async f => {
   const fd = formData(f);
+  if (Object.values(fd).some(v => findPNR(v).length)) { toast('Texten ser ut att innehålla ett personnummer. Ta bort det.', 'crit'); return; }
   if (fd.baseUrl && !/^https:\/\//i.test(fd.baseUrl)) { toast('Appens adress ska börja med https://', 'crit'); return; }
   try {
     await saveSettings({ orgName: fd.orgName, mtName: fd.mtName, mtPhone: fd.mtPhone, mtHours: fd.mtHours, staleMonths: Number(fd.staleMonths), aiTier: fd.aiTier, minutesPerAnswer: Number(fd.minutesPerAnswer), baseUrl: fd.baseUrl === ARTIFACT_URL ? '' : fd.baseUrl });
@@ -495,6 +501,7 @@ ACT.editDevice = el => {
 FORM.device = async f => {
   const fd = formData(f), d = deviceById(f.dataset.id);
   if (!d) return;
+  if (Object.values(fd).some(v => findPNR(v).length)) { toast('Texten ser ut att innehålla ett personnummer. Ta bort det.', 'crit'); return; }
   try {
     await saveDoc('devices', d.id, { name: fd.name, manufacturer: fd.manufacturer, model: fd.model, category: fd.category, dept: fd.dept, inventoryNo: fd.inventoryNo,
       contacts: { mt: { name: fd.mtName, phone: fd.mtPhone, hours: ((d.contacts || {}).mt || {}).hours || '' }, support: { name: fd.spName, phone: fd.spPhone, email: fd.spEmail, hours: fd.spHours } } });

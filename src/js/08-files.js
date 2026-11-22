@@ -101,7 +101,7 @@ ACT.upload = el => openUpload(el.dataset.id || '');
 function openUpload(deviceId) {
   if (!isAdmin()) { toast('Byt till ansvarig för att ladda upp manualer.'); return; }
   const dev = deviceId ? deviceById(deviceId) : null, oldM = dev ? manualFor(dev) : null;
-  const st = { step: 1, dev, oldM, file: null, pages: null, pdf: null, scanned: [], busy: '', prog: 0, progText: '', err: '', ctl: null, diff: null, savedId: '',
+  const st = { step: 1, dev, oldM, file: null, pages: null, pdf: null, scanned: [], masked: [], busy: '', prog: 0, progText: '', err: '', ctl: null, diff: null, savedId: '',
     meta: { name: '', manufacturer: '', model: '', category: 'other', dept: '', inventoryNo: '', version: '', issued: '', lang: '' } };
   const m = modal(html`<div class="up-root"></div>`, { wide: true, onClose: () => { if (st.ctl) st.ctl.abort(); if (st.pdf && st.pdf.destroy) st.pdf.destroy(); } });
   const root = $('.up-root', m.body);
@@ -113,20 +113,21 @@ function openUpload(deviceId) {
     if (st.step === 1) {
       const textN = st.pages ? st.pages.filter(p => !isBlank(p)).length : 0, chars = st.pages ? sum(st.pages.map(p => p.text.length)) : 0;
       setHTML(root, html`${head}<div class="modal-b">${steps(1)}${devCard()}
-        ${!st.pages && !st.busy ? html`<label class="drop" id="upDrop"><input type="file" id="upFile" accept=".pdf,.txt,application/pdf,text/plain" class="sr">${icon('upload', 'ic-xl')}<strong>Välj tillverkarens bruksanvisning</strong><span class="hint">PDF-fil. Dra filen hit eller tryck för att välja. Skannade sidor kan tolkas med OCR.</span></label>` : ''}
+        ${!st.pages && !st.busy ? html`<label class="drop" id="upDrop"><input type="file" id="upFile" accept=".pdf,.txt,application/pdf,text/plain" class="sr">${icon('upload', 'ic-xl')}<strong>Välj tillverkarens bruksanvisning</strong><span class="hint">${localAi() ? 'Välj en PDF med sökbar text eller en textfil (.txt). Dra filen hit eller tryck för att välja.' : 'PDF eller textfil (.txt). Dra filen hit eller tryck för att välja. Skannade PDF-sidor kan tolkas med OCR när AI är tillgänglig.'}</span></label>` : ''}
         ${st.busy ? html`<div class="stack"><div class="typing">${dots()}<span id="upProgText">${st.progText}</span><span class="sp"></span>${st.ctl ? html`<button class="btn btn-s" data-u="stop">Avbryt</button>` : ''}</div><div class="progress"><i id="upProgBar" style="width:${st.prog}%"></i></div></div>` : ''}
         ${st.err ? html`<div class="notice crit">${icon('warn')}<div>${st.err}</div></div>` : ''}
-        ${st.pages && !st.busy ? html`<div class="filecard">${icon('book', 'ic-l')}<div class="grow"><strong>${st.file.name}</strong><div class="small muted">${st.pages.length} sidor, ${nf(chars)} tecken text, ${LANG[st.meta.lang || '']}</div></div><button class="btn btn-s" data-u="reset">Byt fil</button></div>
+        ${st.pages && !st.busy ? html`<div class="filecard">${icon('book', 'ic-l')}<div class="grow"><strong>${st.file.name}</strong><div class="small muted">${st.pages.length} ${st.pages.length === 1 ? 'sida' : 'sidor'}, ${nf(chars)} tecken text, ${LANG[st.meta.lang || '']}</div></div><button class="btn btn-s" data-u="reset">Byt fil</button></div>
+          ${st.masked && st.masked.length ? html`<div class="notice crit">${icon('shield')}<div><strong>Personnummer togs bort ur texten</strong>Något som ser ut som ett personnummer fanns på ${st.masked.length === 1 ? 'sidan' : 'sidorna'} ${st.masked.join(', ')} och har ersatts med [borttaget] innan texten används. En bruksanvisning ska inte innehålla patientuppgifter. Kontrollera filen.</div></div>` : ''}
           ${st.scanned.length ? html`<div class="notice warn">${icon('info')}<div><strong>${st.scanned.length} ${st.scanned.length === 1 ? 'sida saknar' : 'sidor saknar'} sökbar text</strong>Sidorna ser ut att vara skannade bilder. ${localAi() ? 'OCR finns inte i den lokala versionen än. Välj en PDF med textlager.' : aiReady() ? 'OCR tolkar texten med AI. Det tar ungefär 10 sekunder per sida och använder ' + (STANDALONE ? 'din API-nyckel' : 'ditt Claude-konto') + '.' : 'OCR kräver AI, som inte är tillgänglig i den här visningen.'}
             ${aiReady() && !localAi() ? html`<br><button class="btn btn-s btn-primary" data-u="ocr">Tolka ${Math.min(30, st.scanned.length)} ${st.scanned.length > 30 ? 'sidor nu' : (st.scanned.length === 1 ? 'sida' : 'sidor')} med OCR</button>` : ''}</div></div>` : ''}
-          ${textN ? html`<div class="notice ok">${icon('check')}<div>${textN} av ${st.pages.length} sidor har text som går att söka i${st.pages.some(p => p.ocr) ? ', varav ' + st.pages.filter(p => p.ocr).length + ' tolkade med OCR' : ''}.</div></div>` : html`<div class="notice crit">${icon('warn')}<div>Ingen sökbar text hittades. Kör OCR eller välj en annan fil.</div></div>`}` : ''}
+          ${textN ? html`<div class="notice ok">${icon('check')}<div>${st.pages.length === 1 ? 'Sidan' : textN + ' av ' + st.pages.length + ' sidor'} har text som går att söka i${st.pages.some(p => p.ocr) ? ', varav ' + st.pages.filter(p => p.ocr).length + ' tolkade med OCR' : ''}.</div></div>` : html`<div class="notice crit">${icon('warn')}<div>Ingen sökbar text hittades. Kör OCR eller välj en annan fil.</div></div>`}` : ''}
         </div><div class="modal-f"><button type="button" class="btn" data-act="closeOverlay">Avbryt</button><button class="btn btn-primary" data-u="next" ${st.pages && !st.busy && textN ? '' : 'disabled'}>Fortsätt</button></div>`);
     } else if (st.step === 2) {
       const x = st.meta;
       setHTML(root, html`<form data-u="form">${head}<div class="modal-b">${steps(2)}${devCard()}
         ${st.err ? html`<div class="notice crit">${icon('warn')}<div>${st.err}</div></div>` : ''}
         ${st.busy ? html`<div class="typing">${dots()}<span>${st.progText}</span></div>` : ''}
-        ${aiReady() && !st.busy ? html`<div class="rowflex"><button type="button" class="btn btn-s" data-u="autofill">${icon('spark', 'ic-s')}Fyll i från manualen</button><span class="hint">AI läser första och sista sidan. Kontrollera uppgifterna.</span></div>` : ''}
+        ${aiReady() && !st.busy ? html`<div class="rowflex"><button type="button" class="btn btn-s" data-u="autofill">${icon('spark', 'ic-s')}Fyll i från manualen</button><span class="hint">AI läser början och slutet av manualen. Kontrollera uppgifterna.</span></div>` : ''}
         <div class="formgrid">
           ${dev ? '' : html`<div class="field full"><label for="upName">Enhetens namn</label><input class="input" id="upName" name="name" value="${x.name}" required maxlength="80" placeholder="Till exempel Infusionspump Flow 300"></div>
           <div class="field"><label for="upMan">Tillverkare</label><input class="input" id="upMan" name="manufacturer" value="${x.manufacturer}" maxlength="60"></div>
@@ -149,7 +150,8 @@ function openUpload(deviceId) {
     }
   };
   const handleFile = async file => {
-    st.file = file; st.err = ''; st.busy = 'read'; st.prog = 0; st.progText = 'Läser ' + file.name; draw();
+    if (findPNR(file.name).length) { toast('Filnamnet ser ut att innehålla ett personnummer. Byt namn på filen.', 'crit'); return; }
+    st.file = file; st.err = ''; st.masked = []; st.busy = 'read'; st.prog = 0; st.progText = 'Läser ' + file.name; draw();
     try {
       if (/\.txt$/i.test(file.name) || file.type === 'text/plain') { st.pages = splitText(await file.text()); st.pdf = null; }
       else {
@@ -163,6 +165,7 @@ function openUpload(deviceId) {
         st.pdf = r.doc; st.pages = r.pages;
       }
       if (!st.pages.length) throw new Error('tom');
+      maskPages();
       st.scanned = st.pdf ? st.pages.filter(isBlank).map(p => p.n) : [];
       st.meta.lang = detectLang(st.pages.map(p => p.text).join(' '));
       const g = guessVersion(st.pages);
@@ -180,6 +183,14 @@ function openUpload(deviceId) {
       console.warn('Uppladdning:', e);
     }
     st.busy = ''; st.ctl = null; draw();
+  };
+  /* En bruksanvisning ska inte innehålla patientuppgifter. Allt som ser ut som ett personnummer tas
+     bort ur texten innan den kan skickas till AI:n eller sparas, och användaren får veta på vilka sidor. */
+  const maskPages = () => {
+    for (const p of st.pages || []) {
+      const r = maskPNR(p.text);
+      if (r.count) { p.text = r.text; if (!st.masked.includes(p.n)) st.masked.push(p.n); }
+    }
   };
   const runOcr = async () => {
     st.err = '';
@@ -199,6 +210,7 @@ function openUpload(deviceId) {
         done += nums.length;
       }
     } catch (e) { const t = aiFail(e); if (t) st.err = t + (done ? ' Sidorna som hann tolkas är kvar.' : ''); console.warn('OCR:', e); }
+    maskPages();
     st.scanned = st.pages.filter(isBlank).map(p => p.n);
     if (!st.meta.lang) st.meta.lang = detectLang(st.pages.map(p => p.text).join(' '));
     st.busy = ''; st.ctl = null; draw();
@@ -207,6 +219,7 @@ function openUpload(deviceId) {
   const save = async () => {
     keep();
     const x = st.meta, now = Date.now();
+    if (Object.values(x).some(v => findPNR(v).length)) { toast('Texten ser ut att innehålla ett personnummer. Ta bort det.', 'crit'); return; }
     const pages = st.pages.filter(p => p.text.trim()).map(p => ({ n: p.n, text: p.text, ...(p.ocr ? { ocr: true } : {}) }));
     st.err = ''; st.busy = 'save'; st.progText = 'Sparar manualen'; draw();
     try {
@@ -349,6 +362,7 @@ ACT.cardPdf = async el => {
   const d = deviceById(el.dataset.id), m = manualFor(d);
   if (!m || !m.card) return;
   if (m.card.status !== 'approved') { toast('Kortet kan skrivas ut när en ansvarig har godkänt det.'); return; }
+  if (cardStale(m.card, m)) { toast('Kortet bygger på en äldre manual. Skapa och godkänn kortet igen.', 'crit'); return; }
   const card = m.card, c = contactsOf(d), url = deviceUrl(d), T = pdfText;
   el.disabled = true;
   try {

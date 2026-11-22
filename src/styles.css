@@ -387,6 +387,11 @@ img,svg{max-width:100%}
 .excerpts{display:grid;gap:8px}
 .excerpt-text{white-space:pre-line}
 .excerpt mark{background:var(--marker);color:var(--marker-ink);padding:1px 2px;border-radius:2px}
+.excerpt mark.warn{background:transparent;color:var(--crit);font-weight:700;padding:0}
+.warnline{display:block;text-align:left;margin-top:4px}
+.b-ai{background:var(--paper);color:var(--ink-2,inherit);border:1px dashed currentColor;font-weight:600;margin-left:6px}
+.hits-live{display:grid;gap:8px;margin-top:10px}
+.hits-more summary{cursor:pointer;font-weight:600;margin-top:6px}
 .fallback-hit span{font-size:14.5px;line-height:1.45}
 
 /* ---------- Manualsida (papper) ---------- */

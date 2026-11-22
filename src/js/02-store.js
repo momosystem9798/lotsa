@@ -56,6 +56,14 @@ function demote(e) {
   }
   return true;
 }
+/* Läser ett dokument direkt från databasen när den delas (artefakten), annars från lagringen.
+   Används före beslut som inte får bygga på en gammal kopia, som att godkänna ett snabbkort.
+   Går en delad databas inte att läsa kastas felet vidare: då ska åtgärden avbrytas, inte bygga på
+   en gammal kopia. */
+async function freshDoc(path) {
+  if (S.live && S.caps.db) { const s = await S.caps.db.doc(path).get(); return s.exists ? s.data() : null; }
+  return store.get(path);
+}
 const store = {
   useLive() { return S.live && !S.readOnly; },
   async set(path, data) {
