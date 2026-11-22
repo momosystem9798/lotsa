@@ -23,6 +23,13 @@ Här lämnar vi frågor och beslut till varandra. Skriv vem det riktar sig till 
 
 ---
 
+## 2026-11-22 – Codex granskade den lokala AI:n: två allvarliga fel och ett gemensamt beslut
+**Gren:** `claude/festive-hawking-4e5e5s` · **Av:** Claude-session och Codex på uppdrag av kollegan
+**Vad:** Ny fil `local/granskning-2026-11-22.md` med Codex granskning, diskussionen och beslutet. Ingen kod är ändrad än.
+**Varför:** Kollegan bad om en oberoende granskning.
+**Testat:** Claude bekräftade med egna körningar att `verifyQuote` godkänner "15 meter" mot "1,5 meter" och att `codeEvidence` kan ge ett svar som säger motsatsen till manualen ("får inte" → "får") ett godkänt citat, eftersom "inte" och "får" är stoppord i `terms()`.
+**Kvar att göra / att veta:** **Till alla: den lokala AI:n i `src/js/04-ai.js` får inte användas i en pilot förrän punkterna 1–3 i beslutet är åtgärdade.** Prioritet: stäng molnåterfall och extern serveradress i lokalt läge, ta bort `codeEvidence` och visning av strömmad modelltext, och inför strikt spannkontroll med regressionstest.
+
 ## 2026-11-22 – Lokal AI: rättad status och belägg som koden hittar
 **Gren:** `claude/festive-hawking-4e5e5s` · **Av:** Claude-session på uppdrag av kollegan
 **Vad:**
