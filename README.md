@@ -119,4 +119,6 @@ npm install
 node run.mjs
 ```
 
+På en egen dator (Windows, Mac eller Linux) där Playwright inte finns installerat: kör först `npm install playwright` och `npx playwright install chromium` i `test/`.
+
 Testerna hittar sina filer själva. Peka ut Playwright med `PLAYWRIGHT=/sökväg/till/playwright/index.mjs` om det inte är installerat i `test/`, och Chrome med `CHROME=/sökväg/till/chrome` om du vill använda en annan webbläsare än Playwrights. Testet `fristaende` kör appen utan Claude-miljö mot ett simulerat Anthropic API.

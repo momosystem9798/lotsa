@@ -1,7 +1,6 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { execFileSync } from 'node:child_process';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
 /* Sökvägar räknas från testmappen. Playwright och Chrome kan pekas ut med PLAYWRIGHT och CHROME. */
@@ -13,7 +12,11 @@ mkdirSync(SHOTS, { recursive: true });
 const nm = p => join(TEST, 'node_modules', p);
 /* Anthropic-SDK:n hämtas från jsDelivr i webbläsaren. I testerna buntas samma version lokalt. */
 const SDK_BUNDLE = nm('.cache/anthropic-sdk.mjs');
-if (!existsSync(SDK_BUNDLE)) execFileSync(nm('.bin/esbuild'), [nm('@anthropic-ai/sdk/index.mjs'), '--bundle', '--format=esm', '--platform=browser', '--log-level=warning', '--outfile=' + SDK_BUNDLE]);
+/* esbuild anropas via sitt JavaScript-gränssnitt, så att det fungerar på Windows, Mac och Linux. */
+if (!existsSync(SDK_BUNDLE)) {
+  const esbuild = await import('esbuild');
+  await esbuild.build({ entryPoints: [nm('@anthropic-ai/sdk/index.mjs')], bundle: true, format: 'esm', platform: 'browser', logLevel: 'warning', outfile: SDK_BUNDLE });
+}
 const LIB = [
   [/jsdelivr.*@anthropic-ai\/sdk/, SDK_BUNDLE],
   [/pdf\.worker\.min\.js/, nm('pdfjs-dist/build/pdf.worker.min.js')],

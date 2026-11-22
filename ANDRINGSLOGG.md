@@ -23,6 +23,15 @@ Här lämnar vi frågor och beslut till varandra. Skriv vem det riktar sig till 
 
 ---
 
+## 2026-11-22 – Testerna fungerar på Windows
+**Gren:** `claude/festive-hawking-4e5e5s` · **Av:** Claude-session på uppdrag av kollegan
+**Vad:**
+- `test/run.mjs` buntar Anthropic-SDK:n med esbuilds JavaScript-gränssnitt i stället för `execFileSync(node_modules/.bin/esbuild)`. På Windows heter filen `esbuild.cmd`, så det gamla anropet gav `ENOENT`.
+- README beskriver hur Playwright installeras på en egen dator.
+**Varför:** Kollegan körde `node run.mjs lokal` i PowerShell och fick felet `spawnSync ... esbuild ENOENT`.
+**Testat:** Hela sviten går igenom i Linux-containern, med den buntade SDK:n byggd på nytt. Ingen körning är gjord på Windows än: kollegan kör om.
+**Kvar att göra / att veta:** `playwright` finns inte i `test/package.json`, eftersom containern har en egen förinstallerad version.
+
 ## 2026-11-22 – Lokal AI: första arbetsdagen (nätverksgräns, rena utdrag, strikt citatkontroll)
 **Gren:** `claude/festive-hawking-4e5e5s` · **Av:** Claude-session och Codex på uppdrag av kollegan
 **Vad:** Punkterna 1–3 i beslutet i `local/granskning-2026-11-22.md` är genomförda.
