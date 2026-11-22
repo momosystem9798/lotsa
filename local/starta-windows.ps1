@@ -22,9 +22,15 @@ New-Item -ItemType Directory -Force -Path $Mapp, $llamaDir | Out-Null
 $server = Get-ChildItem $llamaDir -Recurse -Filter 'llama-server.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $server) {
   Write-Host 'Hämtar AI-programmet (llama.cpp) ...'
-  $rel = Invoke-RestMethod 'https://api.github.com/repos/ggml-org/llama.cpp/releases/latest' -Headers @{ 'User-Agent' = 'lotsa-start' }
-  $asset = $rel.assets | Where-Object { $_.name -like '*bin-win-cpu-x64.zip' } | Select-Object -First 1
-  if (-not $asset) { throw "Hittade ingen Windows-version av llama.cpp i $($rel.tag_name). Ladda ner den för hand från https://github.com/ggml-org/llama.cpp/releases och packa upp den i $llamaDir." }
+  # Programfilerna finns i de dagliga versionerna (b12631 och så vidare), som är märkta som
+  # förhandsversioner. "latest" pekar därför inte alltid på en version med Windows-filer.
+  $list = Invoke-RestMethod 'https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=20' -Headers @{ 'User-Agent' = 'lotsa-start' }
+  $rel = $null; $asset = $null
+  foreach ($r in $list) {
+    $a = $r.assets | Where-Object { $_.name -like 'llama-*-bin-win-cpu-x64.zip' } | Select-Object -First 1
+    if ($a) { $rel = $r; $asset = $a; break }
+  }
+  if (-not $asset) { throw "Hittade ingen Windows-version av llama.cpp. Ladda ner filen som slutar på bin-win-cpu-x64.zip för hand från https://github.com/ggml-org/llama.cpp/releases och packa upp den i $llamaDir." }
   $zip = Join-Path $Mapp 'llama.zip'
   Invoke-WebRequest $asset.browser_download_url -OutFile $zip -UseBasicParsing
   Expand-Archive $zip -DestinationPath $llamaDir -Force

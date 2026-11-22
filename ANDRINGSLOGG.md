@@ -31,7 +31,8 @@ Här lämnar vi frågor och beslut till varandra. Skriv vem det riktar sig till 
 - README är uppdaterad.
 **Varför:** Kollegan ville inte ladda ner och packa upp filerna för hand.
 **Testat:** `node --check local/start.mjs` går igenom. PowerShell-skriptet är inte testat: containern har ingen PowerShell. Kollegan kör det först på sin dator. Modellens adress svarade 200 (2 740 937 888 byte).
-**Kvar att göra / att veta:** Det är inte kontrollerat att Windows-zipen har exakt det namnmönstret i den senaste versionen. Om den inte hittas säger skriptet till.
+**Rättat efter kollegans första körning:** `releases/latest` gav llama.cpp v1.0.0, som bara innehåller källkod. Programfilerna ligger i de dagliga versionerna `bNNNN`, som är märkta som förhandsversioner. Skriptet letar nu bland de 20 senaste versionerna efter `llama-*-bin-win-cpu-x64.zip` (till exempel `llama-b12631-bin-win-cpu-x64.zip`).
+**Kvar att göra / att veta:** Om filen ändå inte hittas säger skriptet till och förklarar hur man hämtar den för hand.
 
 ## 2026-11-22 – Testerna fungerar på Windows
 **Gren:** `claude/festive-hawking-4e5e5s` · **Av:** Claude-session på uppdrag av kollegan
