@@ -620,7 +620,12 @@ await test('fristaende', async () => {
     if (r.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: CORS });
     const body = r.postDataJSON(), h = await r.allHeaders();
     reqs.push({ body, key: h['x-api-key'] || String(h.authorization || '').replace(/^Bearer /, ''), browser: h['anthropic-dangerous-direct-browser-access'], beta: h['anthropic-beta'] });
-    if (status !== 200) return route.fulfill({ status, headers: { ...CORS, 'content-type': 'application/json' }, body: JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } }) });
+    if (status !== 200) {
+      const error = status === 401 ? { type: 'authentication_error', message: 'invalid x-api-key' }
+        : status === 4001 ? { type: 'invalid_request_error', message: 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.' }
+        : { type: 'invalid_request_error', message: 'testfel: okänd parameter' };
+      return route.fulfill({ status: status === 4001 ? 400 : status, headers: { ...CORS, 'content-type': 'application/json' }, body: JSON.stringify({ type: 'error', error }) });
+    }
     const last = body.messages[body.messages.length - 1].content.map(b => b.text || '').join('\n');
     const out = /Ge sökord/.test(last) ? { sv: ['starta'], en: ['start'] }
       : { status: 'besvarad', svar: 'Så här startar du pumpen:\n1. Anslut nätkabeln och kontrollera att nätlampan lyser. [1]', kallor: [{ n: 1, manual: 'M1', sida: 4, avsnitt: '3.2 Starta pumpen', citat: '1. Anslut nätkabeln och kontrollera att nätlampan lyser' }], kontakta_mt: false, mt_orsak: '', typ: 'procedur' };
@@ -664,7 +669,18 @@ await test('fristaende', async () => {
   await page.fill('.composer textarea', 'Hur rengör jag pumpen?');
   await page.keyboard.press('Enter');
   await page.waitForFunction(() => /API-nyckeln godtogs inte/.test(document.body.innerText), null, { timeout: 8000 });
-  errors = errors.filter(e => !/status of 401/.test(e)); /* webbläsaren loggar det avsiktliga 401-svaret */
+  // kreditfel (Anthropic svarar 400) ger ett tydligt meddelande
+  status = 4001;
+  await page.fill('.composer textarea', 'Hur byter jag slangen?');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => /saknar krediter/.test(document.body.innerText), null, { timeout: 8000 });
+  // okänt fel visar tjänstens eget felmeddelande
+  status = 400;
+  await page.fill('.composer textarea', 'Hur stänger jag av pumpen?');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => /Fel från tjänsten: .*testfel/.test(document.body.innerText), null, { timeout: 8000 });
+  /* webbläsaren loggar de avsiktliga felsvaren */
+  errors = errors.filter(e => !/status of 40[01]/.test(e));
   await ctx.close();
 });
 
