@@ -24,6 +24,13 @@ Här lämnar vi frågor och beslut till varandra. Skriv vem det riktar sig till 
 
 ---
 
+## 2026-11-22 – Ny, fördjupad research: fullständig plan för lokal Lotsa (pågår)
+**Gren:** `claude/festive-hawking-4e5e5s` · **Av:** Claude-session på uppdrag av kollegan
+**Vad:** Ny mapp `research_notes/Lotsa lokal AI fullständig plan/` med sju researchspår (modeller och hårdvara, RAG/PDF/kvalitet, paketering och utrullning, MDR och tillverkarmanualer inkl. upphovsrätt, AI-förordningen/CRA/produktansvar, dataskydd och regionkrav, marknad och upphandling). Görs om med öppnat nätverk eftersom den förra researchen hade många blockerade källor. Rapport kommer i `reports/Lotsa lokal AI fullständig plan.md`.
+**Varför:** Kollegan vill ha en hel plan framåt: om och hur det går, svårigheter och motåtgärder.
+**Testat:** Bara dokumentation. Anteckningarna är inte granskade av människa.
+**Kvar att göra / att veta:** Rapporten är inte klar. Webbverktyget i underagenterna nådde inte alltid EUR-Lex och riksdagen.se, men `curl` gör det.
+
 ## 2026-11-22 – Research: Lotsa som lokal skrivbordsapp för sjukhus
 **Gren:** `claude/festive-hawking-4e5e5s` · **Av:** Claude-session på uppdrag av kollegan
 **Vad:** Ny mapp `research_notes/Lokal AI app för sjukhus/` med researchanteckningar inför att sälja Lotsa till sjukhus som en offline-app med inbyggd lokal AI. Underlaget täcker lokala modeller, teknikstack, MDR och AI-förordningen, dataskydd och cybersäkerhet samt upphandling. Sammanställd rapport: `reports/Lokal AI app för sjukhus.md`. Huvudrekommendation: Tauri 2 + llama.cpp (Qwen3.5-4B), hybridsökning i SQLite, citat som hämtas av koden, KB-Whisper för diktering, och ett snävt avsett ändamål för att hålla Lotsa utanför MDR. CRA och nya produktansvarslagen gäller ändå.
