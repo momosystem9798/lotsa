@@ -24,12 +24,12 @@ Här lämnar vi frågor och beslut till varandra. Skriv vem det riktar sig till 
 
 ---
 
-## 2026-11-22 – Ny, fördjupad research: fullständig plan för lokal Lotsa (pågår)
+## 2026-11-22 – Ny, fördjupad research: fullständig plan för lokal Lotsa
 **Gren:** `claude/festive-hawking-4e5e5s` · **Av:** Claude-session på uppdrag av kollegan
-**Vad:** Ny mapp `research_notes/Lotsa lokal AI fullständig plan/` med sju researchspår (modeller och hårdvara, RAG/PDF/kvalitet, paketering och utrullning, MDR och tillverkarmanualer inkl. upphovsrätt, AI-förordningen/CRA/produktansvar, dataskydd och regionkrav, marknad och upphandling). Görs om med öppnat nätverk eftersom den förra researchen hade många blockerade källor. Rapport kommer i `reports/Lotsa lokal AI fullständig plan.md`.
+**Vad:** Ny mapp `research_notes/Lotsa lokal AI fullständig plan/` med sju researchspår (modeller och hårdvara, RAG/PDF/kvalitet, paketering och utrullning, MDR och tillverkarmanualer inkl. upphovsrätt, AI-förordningen/CRA/produktansvar, dataskydd och regionkrav, marknad och upphandling). Görs om med öppnat nätverk eftersom den förra researchen hade många blockerade källor. Rapport: `reports/Lotsa lokal AI fullständig plan.md` (ersätter i praktiken `reports/Lokal AI app för sjukhus.md`). Slutsats: det går, om modellen hålls i 2–4B-klassen med högst cirka 2 000 tokens underlag, citaten kontrolleras av kod, ändamålet hålls snävt (då sannolikt inte MDR, men CRA och nya produktansvarslagen gäller) och appen levereras som signerad MSI som regionens IT uppdaterar. Plan i fyra faser med tre go/no-go-beslut fram till CRA-kravet 11 dec 2027.
 **Varför:** Kollegan vill ha en hel plan framåt: om och hur det går, svårigheter och motåtgärder.
 **Testat:** Bara dokumentation. Anteckningarna är inte granskade av människa.
-**Kvar att göra / att veta:** Rapporten är inte klar. Webbverktyget i underagenterna nådde inte alltid EUR-Lex och riksdagen.se, men `curl` gör det.
+**Kvar att göra / att veta:** Juridiken måste stämmas av med rådgivare. Riksdagens beslut om nya produktansvarslagen (planerat 25 nov 2026) är inte kontrollerat. Ingen mätning av modellhastighet på riktiga sjukhusdatorer finns, det är rapportens första tekniska steg. Webbverktyget i underagenterna nådde inte alltid EUR-Lex, riksdagen.se och Läkemedelsverket, men `curl` gör det.
 
 ## 2026-11-22 – Research: Lotsa som lokal skrivbordsapp för sjukhus
 **Gren:** `claude/festive-hawking-4e5e5s` · **Av:** Claude-session på uppdrag av kollegan
