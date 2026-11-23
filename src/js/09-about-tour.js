@@ -46,9 +46,9 @@ V.om = {
       <section class="sect"><div class="sect-head"><h2 class="h2">Säkerhet och regelefterlevnad</h2></div>
         <ul class="checks">
           ${check('Inga patientuppgifter', 'Skriv aldrig patientuppgifter i Lotsa. Appen kontrollerar fritextfält och stoppar text som ser ut att innehålla personnummer innan den sparas eller skickas till AI.')}
-          ${check('Bara manualen som källa', 'Svaren bygger på tillverkarens bruksanvisning. Saknas svaret står det ”Det står inte i manualen”.')}
-          ${check('Källhänvisning med citatkontroll', 'I både lokalt läge och molnläget måste ett citat stämma ordagrant med manualtexten för att godkännas. Godkända citat länkar till sidan i manualen.')}
-          ${check('Inga kliniska bedömningar', 'AI:n är instruerad att avvisa frågor om dosering och patientinställningar och hänvisa till ordination och lokala rutiner.')}
+          ${check('Bara manualen som källa', 'Svaret är tillverkarens egen text ur bruksanvisningen, ordagrant. AI:n väljer bara ut avsnittet och skriver aldrig något själv. Hittas inget avsnitt visas inget svar, bara sökträffar och kontakt till MT.')}
+          ${check('Källhänvisning', 'Varje utdrag anger manual, version och sida och öppnar sidan i manualen. AI:n kan bara peka på rader som finns i manualen.')}
+          ${check('Inga kliniska bedömningar', 'Frågor om dosering och patientinställningar får ett fast besked som hänvisar till ordination och lokala rutiner.')}
           ${check('Hänvisning till medicinteknik', 'Vid fel som kan påverka patientsäkerheten visas ”Kontakta medicinteknik” med numret till MT-jouren.')}
           ${check('Versionshantering', 'Varje svar visar manualens version. Gamla manualer flaggas, och larmregister och snabbkort nollställs när en ny version laddas upp.')}
           ${check('Mänsklig granskning', 'Lokala tips visas först när en ansvarig har godkänt dem. AI-skapade snabbkort är utkast tills de har granskats, och kan först då skrivas ut.')}
@@ -57,10 +57,10 @@ V.om = {
 
       <section class="sect"><div class="sect-head"><h2 class="h2">Funktioner</h2></div>
         <div class="featlist">
-          ${feat('chat', 'Fråga manualen', 'Per enhet eller över alla, på svenska även när manualen är på engelska.')}
+          ${feat('chat', 'Fråga manualen', 'Per enhet eller över alla. Svaret är avsnittet ur manualen, ordagrant.')}
           ${feat('bell', 'Larmkodsläge', 'Betydelse, orsak och åtgärd direkt ur larmregistret.')}
-          ${feat('book', 'Källvisare', 'Manualsidan visas med citatet överstruket.')}
-          ${feat('steps', 'Steg för steg', 'Ett handgrepp i taget med stor text.')}
+          ${feat('book', 'Källvisare', 'Manualsidan visas med utdraget överstruket.')}
+          ${feat('steps', 'Steg för steg', 'Granskade snabbkort och larmkort, ett handgrepp i taget med stor text.')}
           ${feat('moon', 'Nattläge', 'Stora knappar, dämpat ljus och tre genvägar.')}
           ${feat('card', 'Snabbkort', 'Ersätter de tejpade lapparna och skrivs ut med QR-kod.')}
           ${feat('note', 'Lokala tips', 'Från personalen, tydligt märkta och godkända av ansvarig.')}
@@ -79,19 +79,20 @@ function tourExample() {
   const d = deviceById('flow300'), m = manualFor(d);
   if (!d || !m || !m.card || !m.pages) return;
   const c = chatOf('flow300');
-  if (!c.msgs.some(x => x.example)) {
+  const res = excerptFromQuote(d, m, m.card.uppstart.sida, m.card.uppstart.citat);
+  if (res && !c.msgs.some(x => x.example)) {
     c.msgs.push({ id: uid(), role: 'q', text: SHORTCUTS.start.q });
-    c.msgs.push({ id: uid(), role: 'a', key: 'flow300', deviceId: 'flow300', q: SHORTCUTS.start.q, kind: 'start', state: 'done', fb: 0, example: true, shortcut: true, res: exampleAnswer(d, m, 'start'), logP: Promise.resolve(null) });
+    c.msgs.push({ id: uid(), role: 'a', key: 'flow300', deviceId: 'flow300', q: SHORTCUTS.start.q, kind: 'start', state: 'done', fb: 0, example: true, shortcut: true, res, logP: Promise.resolve(null) });
   }
   renderLog('flow300');
 }
 const TOUR_STEPS = [
   { route: '#hem', sel: '[data-tour="omni"]', title: 'Ett fält för allt', text: 'Sök en enhet, skriv en larmkod eller ställ en fråga. Svaren kommer bara ur tillverkarnas bruksanvisningar.' },
   { route: '#enheter', sel: '#devList', title: 'Utrustningsbiblioteket', text: 'Alla enheter med sina manualer. Sök på namn eller filtrera per avdelning. Märkningen visar om en manual behöver ses över eller om en enhet har en öppen felanmälan.' },
-  { route: '#enhet-flow300', pre: () => { UI.devTab.flow300 = 'fraga'; }, before: tourExample, sel: '#devPanel .msg-a .a-body', title: 'Fråga manualen', text: 'Svaret kommer som numrerade steg på svenska. Det här är ett förinspelat exempel. När du frågar själv svarar AI:n utifrån manualen.' },
-  { route: '#enhet-flow300', pre: () => { UI.devTab.flow300 = 'fraga'; }, before: tourExample, sel: '#devPanel .sources', title: 'Källan går att kontrollera', text: 'Varje svar anger sida och avsnitt, och citatet jämförs ordagrant med manualtexten. Ett tryck på källan visar manualsidan med stycket överstruket.' },
-  { route: '#larm', before: async () => { const i = $('#alCode'); if (i) i.value = 'E-23'; UI.alarmDev = ''; await runAlarm('E-23', null, $('#alOut')); }, sel: '#alOut', title: 'Larmkodsläge', text: 'Skriv koden från displayen och få betydelse, orsak och åtgärd direkt. Kräver felet tekniker visas numret till MT-jouren.' },
-  { route: '#enhet-flow300', pre: () => { UI.devTab.flow300 = 'kort'; }, sel: '[data-tour="qcard"]', title: 'Snabbkort i stället för lappar', text: 'AI:n sammanfattar uppstart, vanliga larm och rengöring. Kortet granskas av en ansvarig och skrivs ut med QR-kod till enheten.' },
+  { route: '#enhet-flow300', pre: () => { UI.devTab.flow300 = 'fraga'; }, before: tourExample, sel: '#devPanel .msg-a .excerpt', title: 'Fråga manualen', text: 'Svaret är avsnittet ur tillverkarens bruksanvisning, ordagrant, med de rader som besvarar frågan markerade. Lotsa skriver aldrig egen text. Står det inte i manualen visas inget svar.' },
+  { route: '#enhet-flow300', pre: () => { UI.devTab.flow300 = 'fraga'; }, before: tourExample, sel: '#devPanel .msg-a .ex-ref', title: 'Källan går att kontrollera', text: 'Varje utdrag anger enhet, manual, version, sida och avsnitt. Ett tryck på utdraget öppnar manualsidan med stycket överstruket.' },
+  { route: '#larm', before: async () => { const i = $('#alCode'); if (i) i.value = 'E-23'; UI.alarmDev = ''; await runAlarm('E-23', null, $('#alOut')); }, sel: '#alOut', title: 'Larmkodsläge', text: 'Skriv koden från displayen och få manualens eget larmstycke direkt, med orsak och åtgärd som tillverkaren skrivit dem. Kräver felet tekniker visas numret till MT-jouren.' },
+  { route: '#enhet-flow300', pre: () => { UI.devTab.flow300 = 'kort'; }, sel: '[data-tour="qcard"]', title: 'Snabbkort i stället för lappar', text: 'Uppstart, vanliga larm och rengöring med manualens egna rader. AI:n väljer bara ut raderna. Kortet granskas av en ansvarig och skrivs ut med QR-kod till enheten.' },
   { route: '#natt', pre: () => { NIGHT.deviceId = 'flow300'; NIGHT.picking = false; NIGHT.mode = ''; }, sel: '[data-tour="ngrid"]', title: 'Nattläge', text: 'Stora knappar, dämpat ljus och tre genvägar. Uppstart och rengöring visas direkt från snabbkortet, utan väntan.' },
   { route: '#granska', role: 'admin', pre: () => { UI.revTab = 'tips'; }, sel: '#revBody', title: 'Ansvariga godkänner', text: 'Tips från personalen visas först när MT eller vårdenhetschef har godkänt dem. Här hamnar också flaggade svar, felanmälningar och frågor som manualen inte kunde besvara.' },
   { route: '#oversikt', role: 'admin', sel: '[data-tour="kpis"]', title: 'Nyttan i siffror', text: 'Vad personalen frågar om, vilka enheter som kräver mest stöd, uppskattad sparad tid och när på dygnet behovet finns. Underlag för utbildning och inköp.' },

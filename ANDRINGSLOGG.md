@@ -23,6 +23,56 @@ Här lämnar vi frågor och beslut till varandra. Skriv vem det riktar sig till 
 
 ---
 
+## 2026-11-23 – Version 3: allt personalen ser är manualens egen text, aldrig AI-text
+**Gren:** `claude/festive-hawking-4e5e5s` · **Av:** Claude-session på uppdrag av kollegan, i samarbete med Codex (OpenAI) som granskare
+**Vad:**
+- *Ett flöde för molnet och lokalt (`src/js/04-ai.js`):*
+  - `askManuals` går alltid till `askExcerpt` (tidigare `askLocal`). Modellen väljer bara rad-id:n, och Lotsa visar manualens stycken ordagrant.
+  - Molnet har egna gränser (`CLOUD_FULL` 60 000 och `CLOUD_BUDGET` 24 000 tecken), skickar manualen och frågan i två block och tar fram sökord för engelska manualer.
+  - Radvalet ligger i `selectLines` och används av både frågorna och snabbkorten.
+  - `RULES`, `buildContext`, `excerptText`, `normalizeAnswer` och `unsupportedLines` är borttagna.
+- *Svarsvyn (`src/js/05-ui.js`, `src/styles.css`):*
+  - Utdraget visas som ett dokumentcitat med källrad: enhet, manual, version, sida och avsnitt.
+  - Borttaget: AI-märken, "Noggrannare svar", stegvisning av AI-text, det AI-bedömda MT-kortet och det förinspelade exempelsvaret.
+  - Hittas inget svar visas bara den fasta raden "Inget utdrag i manualen besvarar frågan" ("i de sökta avsnitten" vid förurval), sökträffar och MT-kontakt.
+  - Utdrag från OCR-sidor märks. Kopian och flaggningen bär källreferenserna.
+- *Patientfrågor:* `isClinicalQuestion` (`CLINICAL_RE`) stoppar tydliga frågor om en viss patient före larmuppslag, sökträffar och AI, med ett fast besked. Mönstret är snävt, och modellen kan fortfarande avvisa det som slinker igenom.
+- *Snabbkort (`src/js/04-ai.js`, `06-staff.js`, `08-files.js`, `02-store.js`):*
+  - `generateCard` gör tre radval (uppstart, rengöring, larm) med `selectLines`. Kortet består av manualens rader ordagrant (`cardLines`, `cardBlock`), larmen av manualens hela larmstycke (`cardAlarm`), och "Viktigt" av manualens varningar (`cardWarnings`).
+  - Exempelkorten i `src/demo.js` hade egna formuleringar. De görs om till manualens rader när appen startar (`verbatimCard` i `hydrateDemo`), utan AI.
+  - Sparade kort utan `verbatim` (från version 2) visas inte, kan inte godkännas, skrivas ut, visas i nattläget eller steg för steg. De måste skapas om.
+  - Utkast döljs för personal. Nattläget visar kortets varningar tillsammans med stegen.
+  - PDF:en skriver om ≤ ≥ ≠ ≈ → och vägrar skriva ut text med andra tecken utanför Latin-1 (`pdfLossy`), så att manualens text inte ändras tyst.
+- *Larmkortet (`src/js/05-ui.js`, `alarmText` och `numberedSteps` i `04-ai.js`):* visar manualens larmstycke ordagrant med sida. Registret ger bara kod, rubrik, prioritet, sida och MT-flagga. Steg för steg och felanmälan använder manualens numrerade steg. Registrets egna formuleringar (`betyder`, `orsak`, `atgard`) visas inte längre.
+- *Inget utdrag:* sökträffarna ligger hopfällda under "Sök själv i manualen". Kopieringsknappen finns bara för besvarade frågor.
+- *Larmtolkning (`src/js/03-text.js`):* `alarmCodeRe` gör att en kort kod bara träffar sin egen rad (E-23 träffar inte E-23A eller E-23-1). `CODE_LINE` känner igen en kod ensam på raden, hårt bindestreck och rader som "Alarm 12", så att ett larmstycke slutar vid nästa larm. `codeRegex` tar hårt bindestreck och tankstreck. AI-tolkade registerposter visar aldrig sin egen rubrik (larmtabell, larmkort, sökförslag, stegvisning).
+- *Autoifyllning vid uppladdning (`autofillMeta`):* namn, tillverkare, modell och version används bara om de står exakt så på en av de skickade sidorna, och datumet bara om det står som ÅÅÅÅ-MM-DD i texten. Annars lämnas fältet tomt.
+- *OCR:* snabbkortets block, larm och varningar märks OCR i kortet, nattläget, stegvisningen och PDF:en.
+- *Texter:* Om-sidan och rundturen (`src/js/09-about-tour.js`, som använder `excerptFromQuote`) samt admin-etiketterna (`src/js/07-admin.js`).
+- *Tester (`test/run.mjs`, `test/mock.js`):*
+  - Mocken svarar med rad-id:n.
+  - `chatt-svar-kalla`, `moln-strikt`, `fristaende`, `utan-claude`, `lokal`, `lokal-strikt`, `uppladdning` och `ovrigt` är omskrivna efter det nya flödet.
+  - Ny skärmbild 39: inget utdrag.
+  - Nya tester och kontroller: `snabbkort-aldre-format`, att varje rad på ett nytt kort står ordagrant i den uppladdade manualen, att exempelkortet och larmkortet är ordagranna.
+- README: nytt avsnitt "Hur svaren tas fram". Begränsningarna är uppdaterade.
+
+**Varför:** Kollegan vill inte ha AI-text ("AI-slop"). Svaret ska vara manualens text som i den ursprungliga idén, AI:n får aldrig hitta på något, och står det inte i manualen ska AI:n inte svara. Codex hjälpte till att planera och granskade.
+**Testat:** Hela sviten (`node run.mjs`) går igenom. Patientspärren är provad mot 4 patientfrågor och 8 vanliga frågor (inga falska spärrar). Den riktiga lokala modellen och det riktiga molnet är inte omkörda med de nya snabbkortsfrågorna, bara mot mocken.
+**Codex granskning:** tio ronder, alla underkända med nya fynd som sedan åtgärdats:
+- Rond 1–3: fynd i chattflödet.
+- Rond 4: godkända snabbkort visade AI-skriven text.
+- Rond 5: larmkortet visade registrets omskrivningar, larmstycken kapades och PDF:en tappade tecken som ≤.
+- Rond 6–10: autoifyllningen kunde spara AI-formulerade namn, larmstycken kunde hämtas för fel kod eller fortsätta in i nästa larm, OCR-märkningen saknades på kortet och PDF:en kunde klippas.
+
+Två fynd är medvetet inte åtgärdade, och Codex fick veta varför. *Lokala tips* är skrivna av kollegor och godkända av en ansvarig, inte av AI. *Tjänstens felmeddelande i fristående läge* är kollegans felsökningsfunktion från `main` (#4) och visas inom parentes efter en fast rad.
+**Kvar att göra / att veta:**
+- Ett giltigt rad-id kan peka på fel avsnitt eller fel modellvariant. Texten är ändå manualens, och källraden visar var den kommer ifrån.
+- OCR-sidor är maskinellt tolkade och kan avvika från originalet. De märks överallt men verifieras inte.
+- Ett giltigt rad-id kan peka på ett irrelevant stycke. Det går inte att kontrollera mekaniskt. Texten är ändå manualens.
+- Exempelkortens godkännande är påhittat, precis som resten av exempeldatan.
+- Larmstycken avgränsas med heuristik (kodrader, rubriker). En manual med ett ovanligt kodformat kan ge ett för långt eller för kort larmstycke. Texten är ändå manualens, och "Läs i manualen" visar sidan.
+- Nattläget kan logga en visning två gånger.
+
 ## 2026-11-22 – Version 2: strängare kontroll, lokal AI som väljer rader, och undersökning av lagkrav
 **Gren:** `claude/festive-hawking-4e5e5s` · **Av:** Claude-session på uppdrag av kollegan, i samarbete med Codex (OpenAI) som granskare och delvis utvecklare
 **Vad:**

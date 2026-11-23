@@ -201,22 +201,20 @@ await test('chatt-svar-kalla', async () => {
   expect((await txt(page, '.dev-head .h1')).includes('Flow 300'), 'enhetsrubrik');
   await page.click('.shortcut >> nth=0');
   await page.waitForSelector('.msg-a .a-actions', { timeout: 8000 });
+  /* Svaret är manualens egen text: ett utdrag med källrad och markerade rader, ingen AI-text. */
   const body = await txt(page, '.msg-a');
-  expect(body.includes('Så här gör du'), 'svaret visas: ' + body.slice(0, 80));
-  expect(await page.locator('.msg-a .a-body ol li').count() === 3, 'tre steg');
-  expect(await page.locator('.src').count() === 2, 'två källor');
-  expect((await txt(page, '.src >> nth=0')).includes('Citat kontrollerat'), 'första citatet verifierat');
-  expect((await txt(page, '.src >> nth=1')).includes('Citatet hittades inte'), 'påhittat citat upptäcks');
+  expect(await page.locator('.msg-a .excerpt').count() >= 1, 'utdrag ur manualen visas: ' + body.slice(0, 80));
+  expect(await page.locator('.msg-a .excerpt mark').count() >= 1, 'raderna som besvarar frågan är markerade');
+  expect((await txt(page, '.msg-a .ex-ref')).includes('Sida'), 'källraden anger sida');
+  expect(!/AI:n har valt|formulerat av AI|Urval gjort av AI|Så här gör du/.test(body), 'ingen AI-text eller AI-märke i svaret');
+  expect(!(await page.locator('[data-act="deeper"], [data-act="stepsMsg"], .a-body').count()), 'ingen AI-skriven text, inga knappar för AI-svar');
   await page.screenshot({ path: SHOTS + '/03-chatt.png' });
-  await page.click('.cite >> nth=0');
+  await page.click('.msg-a .excerpt >> nth=0');
   await page.waitForSelector('.drawer .paper mark');
-  expect((await txt(page, '.drawer .paper-head')).includes('Citatet står här'), 'källvisare markerar citat');
+  expect((await txt(page, '.drawer .paper-head')).includes('Citatet står här'), 'källvisare markerar utdraget');
   await page.screenshot({ path: SHOTS + '/04-kalla.png' });
   await page.click('.drawer [data-pg="1"]');
   await page.keyboard.press('Escape');
-  /* Steg 3 pekar på ett påhittat citat: svaret är då inte styrkt och kan inte visas steg för steg. */
-  expect((await txt(page, '.msg-a')).includes('Svaret är inte styrkt med citat'), 'varning när ett påstående saknar kontrollerat citat');
-  expect(!(await page.locator('[data-act="stepsMsg"]').count()), 'ingen steg-för-steg-knapp för ostyrkt svar');
   await page.click('[data-act="fb"][data-v="1"]');
   await page.waitForTimeout(150);
   expect(await page.locator('[data-act="fb"][data-v="1"].is-on').count() === 1, 'tumme upp markerad');
@@ -230,21 +228,28 @@ await test('chatt-svar-kalla', async () => {
   await page.fill('.composer textarea', 'Hur byter jag säkring?');
   await page.keyboard.press('Enter');
   await page.waitForSelector('.a-status.saknas');
-  expect((await txt(page, '.msg-a >> nth=1')).includes('Det står inte i manualen'), 'saknas-svar');
+  const none = await txt(page, '.msg-a >> nth=1');
+  expect(none.includes('Inget utdrag i manualen besvarar frågan') && !(await page.locator('.msg-a >> nth=1').locator('.excerpt').count()), 'saknas: fast rad och inget utdrag: ' + none.slice(0, 80));
   expect(await page.locator('.msg-a >> nth=1').locator('.mtcard').count() === 1, 'MT-kort vid saknas');
   // klinisk fråga
   await page.fill('.composer textarea', 'Vilken dos ska patienten ha?');
   await page.keyboard.press('Enter');
   await page.waitForSelector('.a-status.avvisad');
+  /* Patientfrågan stoppas före larmuppslag, sökträffar och AI. */
+  const av = page.locator('.msg-a').filter({ has: page.locator('.a-status.avvisad') });
+  expect(!(await av.locator('.fallback-hit, .hits-more').count()), 'inga sökträffar efter en patientfråga');
+  expect(!(await page.evaluate(() => window.__aiCalls.some(c => JSON.stringify(c.input).includes('Vilken dos')))), 'patientfrågan skickas inte till AI');
   // personnummer
   await page.fill('.composer textarea', 'Patient 19121212-1212 har larm');
   await page.keyboard.press('Enter');
   await page.waitForSelector('.notice.crit');
   expect((await page.inputValue('.composer textarea')).includes('1212'), 'texten ligger kvar efter spärr');
-  // MT-hänvisning
+  // AI:n gör ingen egen MT-bedömning: svaret är utdrag eller en fast rad med kontakt till MT
   await page.fill('.composer textarea', 'Pumpen visar tekniskt fel');
   await page.keyboard.press('Enter');
-  await page.waitForSelector('.mtcard:not(.soft)');
+  await page.waitForFunction(() => document.querySelectorAll('.msg-a .a-actions').length === 4, null, { timeout: 8000 });
+  expect(!(await page.locator('.mtcard:not(.soft)').count()), 'inget AI-bedömt MT-kort');
+  expect(!(await page.evaluate(() => window.__aiCalls.some(c => JSON.stringify(c.input).includes('Vilken dos')))), 'den avvisade patientfrågan följer inte med som tidigare fråga');
   await page.screenshot({ path: SHOTS + '/06-chatt-mt.png', fullPage: false });
   const docs = await page.evaluate(() => [...window.__mockDocs.keys()]);
   expect(docs.some(k => k.startsWith('logs/')), 'frågelogg skriven: ' + docs.join(','));
@@ -261,6 +266,9 @@ await test('larm', async () => {
   await page.click('.alarm-form .btn-primary');
   await page.waitForSelector('.alarm-card');
   expect((await txt(page, '.alarm-card')).includes('OCKLUSION NEDSTRÖMS'), 'E-23 hittas utan bindestreck');
+  /* Larmkortet visar manualens larmstycke, inte registrets omskrivning. */
+  const at = await txt(page, '.alarm-card');
+  expect(at.includes('Orsak: Stängd rullklämma') && at.includes('enligt lokal rutin') && !at.includes('Det är stopp i slangen'), 'larmkortet är ordagrant: ' + at.slice(0, 160));
   await page.screenshot({ path: SHOTS + '/07-larm.png' });
   /* Steg för steg ur ett granskat larmregister. */
   await page.click('[data-act="alarmSteps"]');
@@ -315,6 +323,9 @@ await test('snabbkort-qr-pdf', async () => {
   await page.click('[data-tab="kort"]');
   await page.waitForSelector('.qcard');
   await page.screenshot({ path: SHOTS + '/09-snabbkort.png' });
+  /* Exempelkortet består av manualens egna rader. */
+  const qt = await txt(page, '.qcard');
+  expect(qt.includes('Anslut nätkabeln och kontrollera att nätlampan lyser.') && !qt.includes('Nätlampan ska lysa.'), 'exempelkortet är ordagrant: ' + qt.slice(0, 200));
   await page.click('[data-act="cardPdf"]');
   await page.waitForTimeout(1500);
   expect(existsSync(SHOTS + '/Snabbkort_infusionspump-flow-300.pdf'), 'snabbkort-PDF sparad');
@@ -476,6 +487,18 @@ await test('uppladdning', async () => {
   await page.click('[data-act="cardMake"]');
   await page.waitForSelector('.qcard', { timeout: 8000 });
   expect((await txt(page, '.qcard-head')).includes('Utkast'), 'nytt kort är utkast');
+  /* Varje rad på kortet ska stå ordagrant i den uppladdade manualen. */
+  const cardRows = await page.locator('.qcard li').allInnerTexts();
+  const manText = await page.evaluate(() => [...window.__mockDocs].filter(([k]) => /^manuals\/m-testpump[^/]+\/parts\//.test(k)).map(([, v]) => JSON.stringify(v)).join(' '));
+  const norm = x => x.replace(/\s+/g, ' ').replace(/ ?Manual sida \d+(, OCR)?$/, '').replace(/ \(OCR\)$/, '').trim();
+  expect(cardRows.length > 0, 'kortet har rader');
+  for (const r of cardRows) expect(norm(manText.replace(/\\n/g, ' ')).includes(norm(r)), 'raden finns ordagrant i manualen: ' + r);
+  /* Personalen ser inte AI-skrivna utkast. */
+  await page.click('.rail [data-role="staff"]');
+  await page.waitForTimeout(200);
+  expect(!(await page.locator('.qcard').count()) && (await txt(page, '#devPanel')).includes('Snabbkortet granskas'), 'utkastet döljs för personal');
+  await page.click('.rail [data-role="admin"]');
+  await page.waitForSelector('.qcard');
   await page.click('[data-act="cardApprove"]');
   await page.waitForTimeout(300);
   expect((await txt(page, '.qcard-head')).includes('Granskat'), 'kort godkänt');
@@ -483,7 +506,7 @@ await test('uppladdning', async () => {
   await page.click('[data-tab="fraga"]');
   await page.click('.shortcut >> nth=0');
   await page.waitForSelector('.msg-a .a-actions', { timeout: 8000 });
-  expect((await txt(page, '.src >> nth=0')).includes('Citat kontrollerat'), 'citat verifieras mot uppladdad text');
+  expect((await txt(page, '.msg-a .excerpt >> nth=0')).includes('Testpump'), 'utdraget kommer ur den uppladdade manualen: ' + (await txt(page, '.msg-a')).slice(0, 120));
   // larm som inte finns i registret -> manualens egen text, ingen AI-tolkning och inget sparas
   await page.click('[data-tab="larm"]');
   await page.fill('.alarm-input', 'Z-1');
@@ -521,11 +544,7 @@ await test('ovrigt', async () => {
   const { ctx, page } = await open(browser, { hash: '#fraga' });
   await page.click('[data-act="exampleQ"] >> nth=0');
   await page.waitForSelector('.msg-a .a-actions', { timeout: 8000 });
-  expect(/Infusionspump|Patientmonitor/.test(await txt(page, '.src >> nth=0')), 'källan namnger enheten i alla-läget: ' + await txt(page, '.src >> nth=0'));
-  await page.click('[data-act="deeper"]');
-  await page.waitForFunction(() => document.querySelectorAll('.msg-a .a-actions').length === 2, null, { timeout: 8000 });
-  const tiers = await page.evaluate(() => window.__aiCalls.map(c => c.tier));
-  expect(tiers.includes('default'), 'noggrannare svar använder standardmodellen: ' + tiers.join(','));
+  expect(/Infusionspump|Patientmonitor/.test(await txt(page, '.msg-a .ex-ref >> nth=0')), 'källraden namnger enheten i alla-läget: ' + await txt(page, '.msg-a'));
   await page.click('[data-act="clearChat"]');
   expect(await page.locator('.msg-q').count() === 0, 'ny konversation');
   // omni
@@ -707,10 +726,10 @@ await test('rundtur-mobil', async () => {
 await test('utan-claude', async () => {
   const { ctx, page } = await open(browser, { noClaude: true, hash: '#enhet-aer5' });
   expect((await txt(page, '#banner')).includes('API-nyckel'), 'banner om API-nyckel');
+  /* Utan AI: sökträffar ur manualen, aldrig förinspelade eller egenskrivna svar. */
   await page.click('.shortcut >> nth=0');
-  await page.waitForSelector('.msg-a .a-actions');
-  expect((await txt(page, '.msg-a')).includes('Förinspelat exempelsvar'), 'exempelsvar utan AI');
-  expect((await txt(page, '.src')).includes('Citat kontrollerat'), 'exempelcitat verifierat');
+  await page.waitForSelector('.msg-a .fallback-hit');
+  expect((await txt(page, '.msg-a')).includes('Sökning utan AI') && !(await page.locator('.msg-a .a-body').count()), 'sökträffar utan AI-text');
   await page.fill('.composer textarea', 'Hur kalibrerar jag syrgascellen?');
   await page.keyboard.press('Enter');
   await page.waitForSelector('.fallback-hit');
@@ -748,8 +767,10 @@ await test('fristaende', async () => {
       return route.fulfill({ status: status === 4001 ? 400 : status, headers: { ...CORS, 'content-type': 'application/json' }, body: JSON.stringify({ type: 'error', error }) });
     }
     const last = body.messages[body.messages.length - 1].content.map(b => b.text || '').join('\n');
+    const all = body.messages.map(mm => mm.content.map(b => b.text || '').join('\n')).join('\n');
+    const line = (all.match(/^\[(S\d+)\] [^\n]*Anslut nätkabeln[^\n]*$/m) || [])[1];
     const out = /Ge sökord/.test(last) ? { sv: ['starta'], en: ['start'] }
-      : { status: 'besvarad', svar: 'Så här startar du pumpen:\n1. Anslut nätkabeln och kontrollera att nätlampan lyser. [1]', kallor: [{ n: 1, manual: 'M1', sida: 4, avsnitt: '3.2 Starta pumpen', citat: '1. Anslut nätkabeln och kontrollera att nätlampan lyser' }], kontakta_mt: false, mt_orsak: '', typ: 'procedur' };
+      : { status: 'besvarad', rader: line ? [line] : [] };
     return route.fulfill({ status: 200, headers: { ...CORS, 'content-type': 'text/event-stream' }, body: sse(JSON.stringify(out)) });
   };
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 }, deviceScaleFactor: 1 });
@@ -765,8 +786,7 @@ await test('fristaende', async () => {
   expect(await page.locator('#banner .banner').count() === 0, 'bannern försvinner när nyckeln finns');
   await page.click('.shortcut >> nth=0');
   await page.waitForSelector('.msg-a .a-actions', { timeout: 8000 });
-  expect((await txt(page, '.msg-a')).includes('Så här startar du pumpen'), 'svar från API visas');
-  expect((await txt(page, '.src')).includes('Citat kontrollerat'), 'citatet kontrolleras mot manualen');
+  expect((await txt(page, '.msg-a .excerpt mark')).includes('Anslut nätkabeln'), 'utdrag med raden som API:t pekade ut: ' + (await txt(page, '.msg-a')).slice(0, 120));
   const main = reqs.find(r => r.body.messages[0].content.length > 1);
   expect(main && main.key === 'sk-ant-test-0000000000000000' && main.browser === 'true', 'nyckel och webbläsarhuvud skickas');
   expect(main.body.model === 'claude-opus-5-5' && main.body.stream === true && main.body.fallbacks === 'default', 'modell, strömning och reservmodell: ' + JSON.stringify({ m: main.body.model, s: main.body.stream, f: main.body.fallbacks }));
@@ -860,10 +880,10 @@ await test('lokal', async () => {
   await page.click('.shortcut >> nth=0');
   await page.waitForSelector('.msg-a .a-actions', { timeout: 8000 });
   const shown = await txt(page, '.msg-a');
-  expect(shown.includes('Ur manualen, ordagrant') && shown.includes('Urval gjort av AI'), 'utdraget är märkt som AI-urval av tillverkarens text');
+  expect(shown.includes('Text ur tillverkarens bruksanvisning, oförändrad') && !/Urval gjort av AI|AI:n har valt/.test(shown), 'utdraget är märkt som tillverkarens text, utan AI-märken');
   expect((await txt(page, '.msg-a .excerpt mark >> nth=0')).startsWith('Anslut nätkabeln'), 'vald rad markeras i stycket');
   expect((await page.locator('.msg-a .excerpt mark:not(.warn)').count()) === 2, 'två valda rader markeras');
-  expect((await txt(page, '.src')).includes('Citat kontrollerat'), 'källan är manualens egen text');
+  expect((await txt(page, '.msg-a .ex-ref')).includes('Sida 4'), 'källraden anger sidan');
   expect(await page.locator('.msg-a details.hits-more').count() === 1, 'sökträffarna finns kvar under svaret');
   const main = reqs.filter(r => r.max_tokens !== 1).pop();
   const schema = main.response_format && main.response_format.json_schema && main.response_format.json_schema.schema;
@@ -899,7 +919,7 @@ await test('lokal-strikt', async () => {
   const { ctx, page } = await localPage(api);
   const fallback = async (q, what) => {
     const t = await (await askChat(page, q)).innerText();
-    expect(t.includes('Reservläge') && !t.includes('Citat kontrollerat'), what + ': reservläget visas');
+    expect(t.includes('Sökning utan AI') && !(await page.locator('.msg-a').last().locator('.excerpt').count()), what + ': sökning utan AI visas');
   };
   await fallback('Får pumpen användas vid MR-undersökning?', 'besvarad utan rader');
   mode = 'okant'; await fallback('Får pumpen användas vid MR?', 'okänt id');
@@ -909,10 +929,10 @@ await test('lokal-strikt', async () => {
   expect(t.includes('Lotsa gör inga kliniska bedömningar'), 'fast text vid avvisad fråga');
   mode = 'saknas';
   t = await (await askChat(page, 'Hur kopplar jag pumpen till wifi?')).innerText();
-  expect(t.includes('Hittade inget svar'), 'fast text vid saknas');
+  expect(t.includes('Inget utdrag i manualen besvarar frågan'), 'fast text vid saknas');
   mode = 'ratt';
   t = await (await askChat(page, 'Får pumpen användas i MR-miljö?')).innerText();
-  expect(t.includes('Citat kontrollerat') && t.includes('får inte användas i MR-miljö'), 'rätt rad visas: ' + t.slice(0, 120));
+  expect(t.includes('Text ur tillverkarens bruksanvisning') && t.includes('får inte användas i MR-miljö'), 'rätt rad visas: ' + t.slice(0, 120));
   mode = 'blandat';
   await fallback('Får pumpen användas nära MR?', 'ett giltigt och ett okänt id');
   mode = 'granne';
@@ -937,7 +957,7 @@ await test('lokal-kontext', async () => {
   r = localApi(pick, { tooLarge: 6500 });
   ({ ctx, page } = await localPage(r.api));
   t = await (await askChat(page, 'Får pumpen användas i MR-miljö?')).innerText();
-  expect(t.includes('får inte användas i MR-miljö') && !t.includes('Reservläge'), 'kontextfel ger ett nytt försök med mindre urval: ' + t.slice(0, 120));
+  expect(t.includes('får inte användas i MR-miljö') && !t.includes('Sökning utan AI'), 'kontextfel ger ett nytt försök med mindre urval: ' + t.slice(0, 120));
   errors = errors.filter(e => !/status of 400/.test(e)); /* det avsiktliga kontextfelet */
   await ctx.close();
   /* Styckning: en fristående VARNING-rad är ingen rubrik, och raden efter är en varning. */
@@ -969,7 +989,7 @@ await test('lokal-avbruten', async () => {
   const { ctx, page } = await localPage(api);
   for (; i < cases.length; i++) {
     const t = await (await askChat(page, 'Får pumpen användas i MR-miljö?')).innerText();
-    expect(t.includes('Reservläge') && !t.includes('Citat kontrollerat'), cases[i][0] + ' ger reservläget');
+    expect(t.includes('Sökning utan AI') && !t.includes('Text ur tillverkarens bruksanvisning'), cases[i][0] + ' ger sökning utan AI');
   }
   await ctx.close();
 });
@@ -996,39 +1016,45 @@ await test('lokal-nere', async () => {
   await ctx.close();
 });
 
-/* Molnläget: strikt citatkontroll, ingen strömmad text, ogiltig JSON ger reservläget. */
+/* Molnläget: samma utdragsflöde som lokalt. Ingen AI-text, okända id:n och ogiltig JSON ger sökning utan AI. */
 await test('moln-strikt', async () => {
   const { ctx, page } = await open(browser, { hash: '#enhet-flow300', mock: { slow: 1500 } });
   await page.click('[data-tab="fraga"]');
-  await page.fill('.composer textarea', 'Decimalfel: vilken infusionshastighet i ml/h klarar pumpen?');
+  await page.fill('.composer textarea', 'Hur startar jag pumpen?');
   await page.keyboard.press('Enter');
   await page.waitForTimeout(150);
-  expect(!(await page.content()).includes('MOLNTEXT-9Z') && (await page.locator('.msg-a .typing').count()) === 1, 'ingen AI-text visas medan svaret skrivs');
+  expect((await page.locator('.msg-a .typing').count()) === 1, 'vänteläge medan urvalet görs');
   await page.waitForSelector('.msg-a .typing ~ .hits-live .fallback-hit', { timeout: 3000 });
   expect((await page.locator('.msg-a .hits-live .fallback-hit').count()) >= 1, 'sökträffar visas medan AI:n arbetar');
   await page.screenshot({ path: SHOTS + '/42-soktraffar-medan.png' });
   await page.waitForSelector('.msg-a .a-actions', { timeout: 8000 });
   let t = await txt(page, '.msg-a');
-  expect(t.includes('Citatet hittades inte') && !t.includes('Citat kontrollerat'), 'decimalfel underkänns: ' + t.slice(0, 120));
-  expect(t.includes('Svaret är inte styrkt med citat'), 'varning för ostyrkt svar');
-  /* Ett äkta citat får inte styrka ett svar som säger motsatsen. */
-  await page.fill('.composer textarea', 'En motsägelse om MR?');
+  expect(await page.locator('.msg-a .excerpt').count() >= 1 && !(await page.locator('.msg-a .a-body').count()), 'molnet visar utdrag ur manualen, ingen AI-text: ' + t.slice(0, 120));
+  const calls = await page.evaluate(() => window.__aiCalls.map(c => Array.isArray(c.input) ? c.input.map(x => x.content).join('\n') : String(c.input)));
+  expect(calls.some(c => /\[S\d+\] /.test(c) && c.includes('"rader"')), 'molnet får manualens rader med id och svarar med rad-id:n');
+  /* Ett påhittat rad-id visar inget utdrag. */
+  await page.fill('.composer textarea', 'Ge ett påhittat id');
   await page.keyboard.press('Enter');
-  await page.waitForSelector('.msg-a >> nth=1 >> .a-actions', { timeout: 8000 });
+  await page.waitForSelector('.msg-a >> nth=1 >> .notice', { timeout: 8000 });
   t = await txt(page, '.msg-a >> nth=1');
-  expect(t.includes('Citat kontrollerat') && t.includes('Svaret stämmer inte med citatet'), 'motsägelse mot äkta citat varnas: ' + t.slice(0, 160));
-  await page.locator('.msg-a >> nth=1').scrollIntoViewIfNeeded();
-  await page.screenshot({ path: SHOTS + '/39-motsagelse.png' });
-  expect(!(await page.locator('.msg-a >> nth=1 >> [data-act="stepsMsg"]').count()), 'ingen stegvisning');
+  expect(t.includes('Sökning utan AI') && !(await page.locator('.msg-a >> nth=1 >> .excerpt').count()), 'okänt id ger sökning utan AI: ' + t.slice(0, 120));
+  /* Står det inte i manualen: ingen AI-text, en fast rad, sökträffar och MT. */
+  await page.fill('.composer textarea', 'Hur byter jag säkring?');
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('.msg-a >> nth=2 >> .a-status.saknas', { timeout: 8000 });
+  t = await txt(page, '.msg-a >> nth=2');
+  expect(t.includes('Inget utdrag i manualen besvarar frågan') && !(await page.locator('.msg-a >> nth=2 >> .excerpt').count()), 'saknas: fast rad, inget utdrag: ' + t.slice(0, 120));
+  await page.locator('.msg-a >> nth=2').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: SHOTS + '/39-inget-utdrag.png' });
   await page.fill('.composer textarea', 'Ge mig trasig json');
   await page.keyboard.press('Enter');
-  await page.waitForSelector('.msg-a >> nth=2 >> .notice', { timeout: 8000 });
-  t = await txt(page, '.msg-a >> nth=2');
-  expect(t.includes('Reservläge') && !t.includes('999 ml/h'), 'ogiltig JSON ger reservläget utan AI-text: ' + t.slice(0, 120));
+  await page.waitForSelector('.msg-a >> nth=3 >> .notice', { timeout: 8000 });
+  t = await txt(page, '.msg-a >> nth=3');
+  expect(t.includes('Sökning utan AI') && !t.includes('MOLNTEXT-9Z'), 'ogiltig JSON ger sökning utan AI-text: ' + t.slice(0, 120));
   await ctx.close();
   /* Enhetstest av strictQuote: alla delar av ett citat med ellips måste stå i ordning på sidan. */
   const vm = await import('node:vm'), box = {};
-  const ai = readFileSync(join(ROOT, 'src/js/04-ai.js'), 'utf8'), fn = ai.slice(ai.indexOf('const ELLIPS_GAP'), ai.indexOf('function normalizeAnswer('));
+  const ai = readFileSync(join(ROOT, 'src/js/04-ai.js'), 'utf8'), fn = ai.slice(ai.indexOf('const ELLIPS_GAP'), ai.indexOf('/* ===== Frågor'));
   vm.runInNewContext(readFileSync(join(ROOT, 'src/js/03-text.js'), 'utf8') + ';' + fn + ';this.q = strictQuote; this.cc = claimConflicts;', box);
   const pages = [{ n: 1, text: 'Förvaring: -20 °C till 40 °C.' }, { n: 2, text: 'Håll avståndet minst 1,5 meter. Rengör med 70 % alkohol och låt ytan torka helt.' }];
   expect(!box.q(pages, 1, 'Förvaring: 20 °C till 40 °C').ok, 'minustecknet måste stämma');
@@ -1128,13 +1154,24 @@ await test('moln-strikt', async () => {
 /* Larm: AI-tolkade poster som ingen granskat visas inte, och uppslag sparar aldrig något. */
 /* Ett godkänt snabbkort från en tidigare uppladdning av manualen får inte skrivas ut eller visas steg för steg. */
 await test('snabbkort-inaktuellt', async () => {
-  const { ctx, page } = await open(browser, { hash: '#enhet-flow300', mock: { seed: { 'manuals/m-flow300': { card: { status: 'approved', version: 'Rev D', rev: 12345, madeAt: 1, approvedAt: 2, uppstart: { steg: ['Anslut nätkabeln.', 'Tryck på PÅ/AV.'], sida: 4, avsnitt: '3.2', citat: '' }, rengoring: { steg: ['Torka av.'], sida: 9, avsnitt: '7', citat: '' }, larm: [], viktigt: [] } } } } });
+  const { ctx, page } = await open(browser, { hash: '#enhet-flow300', mock: { seed: { 'manuals/m-flow300': { card: { status: 'approved', verbatim: true, version: 'Rev D', rev: 12345, madeAt: 1, approvedAt: 2, uppstart: { steg: ['Anslut nätkabeln.', 'Tryck på PÅ/AV.'], sida: 4, avsnitt: '3.2', citat: '' }, rengoring: { steg: ['Torka av.'], sida: 9, avsnitt: '7', citat: '' }, larm: [], viktigt: [] } } } } });
   await page.click('[data-tab="kort"]');
   await page.waitForSelector('.qcard');
   const t = await page.locator('main').innerText();
   expect(t.includes('Kortet bygger på en äldre manual'), 'varning för inaktuellt kort: ' + t.slice(0, 200));
   expect(await page.locator('[data-act="cardPdf"][disabled]').count() === 1, 'utskrift spärrad');
   expect(await page.locator('.qcard ~ * [data-act="cardSteps"], [data-act="cardSteps"]').count() === 0, 'ingen stegvisning');
+  await ctx.close();
+});
+
+/* Ett kort från en tidigare version (egna formuleringar, ingen verbatim-markering) visas inte och kan inte skrivas ut. */
+await test('snabbkort-aldre-format', async () => {
+  const { ctx, page } = await open(browser, { hash: '#enhet-flow300', mock: { seed: { 'manuals/m-flow300': { card: { status: 'approved', version: 'Rev D', madeAt: 1, approvedAt: 2, uppstart: { steg: ['OMSKRIVET-STEG-7Q'], sida: 4, avsnitt: '3.2', citat: '' }, rengoring: { steg: [], sida: 9, avsnitt: '', citat: '' }, larm: [], viktigt: [] } } } } });
+  await page.click('[data-tab="kort"]');
+  await page.waitForSelector('#devPanel .empty');
+  const t = await txt(page, '#devPanel');
+  expect(t.includes('Snabbkortet behöver skapas om') && !t.includes('OMSKRIVET-STEG-7Q'), 'äldre kort döljs: ' + t.slice(0, 160));
+  expect(!(await page.locator('.qcard, [data-act="cardPdf"], [data-act="cardSteps"]').count()), 'ingen visning, utskrift eller stegvisning');
   await ctx.close();
 });
 

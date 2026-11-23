@@ -181,7 +181,7 @@ function hydrateDemo() {
   for (const c of COLLS) DEMO_IDS[c] = new Set(DEMO[c].map(x => x.id));
   DEMO.manuals.forEach(m => {
     m.uploadedAt = relToMs(m.uploadedRel);
-    if (m.card) { m.card.madeAt = relToMs(m.card.madeRel); if (m.card.approvedRel) m.card.approvedAt = relToMs(m.card.approvedRel); }
+    if (m.card) { m.card.madeAt = relToMs(m.card.madeRel); if (m.card.approvedRel) m.card.approvedAt = relToMs(m.card.approvedRel); m.card = verbatimCard(m); }
     (m.history || []).forEach(h => { h.replacedAt = relToMs(h.replacedRel); });
   });
   for (const c of ['tips', 'flags', 'reports']) DEMO[c].forEach(x => {

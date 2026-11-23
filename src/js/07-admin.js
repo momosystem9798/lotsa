@@ -364,7 +364,7 @@ V.manualer = {
 
 /* ----- Logg ----- */
 UI.logTab = 'q'; UI.logDev = ''; UI.logSt = '';
-const ST_LABEL = { ok: ['Ur manualen', 'b-ok'], urval: ['AI-urval ur manualen', 'b-ok'], ostyrkt: ['Inte styrkt', 'b-warn'], delvis: ['Delvis', 'b-warn'], saknas: ['Saknas i manualen', 'b-warn'], avvisad: ['Avvisad, klinisk fråga', 'b-crit'], reserv: ['Reservläge', ''] };
+const ST_LABEL = { ok: ['Ur manualen', 'b-ok'], urval: ['Utdrag ur manualen', 'b-ok'], ostyrkt: ['Inte styrkt', 'b-warn'], delvis: ['Delvis', 'b-warn'], saknas: ['Inget utdrag', 'b-warn'], avvisad: ['Avvisad, klinisk fråga', 'b-crit'], reserv: ['Sökning utan AI', ''] };
 const AUDIT_LABEL = { manual: 'Manual', tip: 'Tips', card: 'Snabbkort', flag: 'Flagga', report: 'Felanmälan', settings: 'Inställning', device: 'Enhet' };
 async function logRows() {
   const rows = (await loadLogs()).map(r => ({ ...r }));
@@ -433,7 +433,7 @@ V.installningar = {
           <div class="field full"><label for="sMtH">MT-jour, tider</label><input class="input" id="sMtH" name="mtHours" value="${s.mtHours}" maxlength="60" placeholder="Till exempel dygnet runt"></div></div></div>
         <div class="panel"><div class="panel-h"><h2 class="h3">Manualer och svar</h2></div><div class="formgrid">
           <div class="field"><label for="sStale">Varna när manualen är äldre än</label><select class="select" id="sStale" name="staleMonths">${[12, 24, 36, 48, 60].map(n => html`<option value="${n}" ${s.staleMonths === n ? 'selected' : ''}>${n} månader</option>`)}</select></div>
-          <div class="field"><label for="sTier">AI-svar</label><select class="select" id="sTier" name="aiTier"><option value="quick" ${s.aiTier === 'quick' ? 'selected' : ''}>Snabba svar (rekommenderas)</option><option value="default" ${s.aiTier === 'default' ? 'selected' : ''}>Noggranna svar, tar längre tid</option></select><span class="hint">Oavsett val kontrolleras varje citat mot manualtexten.</span></div>
+          <div class="field"><label for="sTier">Urval av avsnitt (molnet)</label><select class="select" id="sTier" name="aiTier"><option value="quick" ${s.aiTier === 'quick' ? 'selected' : ''}>Snabbt (rekommenderas)</option><option value="default" ${s.aiTier === 'default' ? 'selected' : ''}>Noggrant, tar längre tid</option></select><span class="hint">Oavsett val visas bara manualens egen text.</span></div>
           <div class="field"><label for="sMin">Sparad tid per besvarad fråga</label><select class="select" id="sMin" name="minutesPerAnswer">${[3, 4, 5, 6, 8, 10, 15].map(n => html`<option value="${n}" ${s.minutesPerAnswer === n ? 'selected' : ''}>${n} minuter</option>`)}</select><span class="hint">Antagande bakom översiktens tidsbesparing.</span></div>
           <div class="field"><label for="sUrl">Appens adress för QR-koder</label><input class="input" id="sUrl" name="baseUrl" value="${s.baseUrl || ARTIFACT_URL}" placeholder="https://..." inputmode="url"><span class="hint">Länken du delar till appen. QR-koderna pekar hit.</span></div></div></div>
         <div class="rowflex"><button class="btn btn-primary">Spara inställningarna</button></div>

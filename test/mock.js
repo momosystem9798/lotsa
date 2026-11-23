@@ -57,6 +57,26 @@
       const ps = pagesIn(text.split('UTDRAG')[1] || text), p = ps[0] || { n: 1, text: '' };
       return { uppstart: { steg: ['Anslut nätkabeln.', 'Tryck på START.'], sida: p.n, avsnitt: 'Uppstart', citat: firstSentence(p.text) }, larm: [{ kod: 'Z-1', betyder: 'Sensorfel', gor: 'Torka av sensorn.' }], rengoring: { steg: ['Torka med fuktig duk.'], sida: p.n, avsnitt: 'Rengöring', citat: firstSentence(p.text) }, viktigt: ['Använd endast godkända tillbehör.'] };
     }
+    // huvudfrågan: utdragsflödet, modellen svarar bara med rad-id:n
+    if (/var och en med ett id som \[S12\]/.test(text)) {
+      const lowq = (text.split(/(?:^|\n)Fråga: /).pop() || '').toLowerCase();
+      if (/trasig json/.test(lowq)) throw { code: 'invalid_json', message: 'mock', text: 'MOLNTEXT-9Z {"status":' };
+      /* Snabbkortens tre radval. */
+      const all = [...text.matchAll(/^\[(S\d+)\] (.*)$/gm)].map(m => ({ id: m[1], t: m[2] }));
+      const pickBy = (re, n) => { const ids = all.filter(l => re.test(l.t)).slice(0, n).map(l => l.id); return ids.length ? { status: 'besvarad', rader: ids } : { status: 'saknas', rader: [] }; };
+      if (/välj raderna i uppstartsproceduren/.test(lowq)) return pickBy(/anslut|tryck på|starta|switch|connect|press|slå på|kontrollera att/i, 6);
+      if (/välj raderna i rengöringsproceduren/.test(lowq)) return pickBy(/rengör|torka|desinf|wipe|clean|disinfect/i, 6);
+      if (/vilka larm- eller felkoder/.test(lowq)) return pickBy(/^(?:[A-Z]{1,4}[-\s]?\d{1,4}|Err\s?\d)/, 4);
+      if (/säkring|extern skärm/.test(lowq)) return { status: 'saknas', rader: [] };
+      if (/dos|vilken hastighet ska/.test(lowq)) return { status: 'avvisad', rader: [] };
+      if (/påhittat id/.test(lowq)) return { status: 'besvarad', rader: ['S99999'] };
+      const lines = [...text.matchAll(/^\[(S\d+)\] (.*)$/gm)].map(m => ({ id: m[1], t: m[2].toLowerCase() }));
+      const ws = (lowq.match(/[a-zåäö]{4,}/g) || []).map(w => w.slice(0, 5));
+      const score = l => ws.reduce((a, w) => a + (l.t.includes(w) ? 1 : 0), 0) + (/start/.test(lowq) && /starta|anslut|switching on|på\/av/.test(l.t) ? 2 : 0) + (/reng/.test(lowq) && /rengör|torka|cleaning/.test(l.t) ? 2 : 0);
+      const best = lines.map(l => ({ ...l, s: score(l) })).filter(l => l.s > 0).sort((a, b) => b.s - a.s).slice(0, 2);
+      if (!best.length) return { status: 'saknas', rader: [] };
+      return { status: 'besvarad', rader: best.map(l => l.id).sort((a, b) => Number(a.slice(1)) - Number(b.slice(1))) };
+    }
     // huvudfrågan
     const low = q.split(/(?:^|\n)Fråga[^:\n]*: /).pop().toLowerCase();
     if (/säkring|extern skärm/.test(low)) return { status: 'saknas', svar: 'Det står inte i manualen. Manualen beskriver underhåll men inte detta.', kallor: [], kontakta_mt: false, mt_orsak: '', typ: 'annat' };

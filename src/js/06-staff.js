@@ -73,7 +73,7 @@ INPUT.omni = async el => {
   if (!out.isConnected || el.value.trim() !== q) return;
   const codeHits = evidence ? evidence.results : [];
   setHTML(out, html`<div class="omni-sug">
-    ${codeHits.map(x => html`<button data-act="omniCode" data-code="${q}" data-id="${x.device.id}">${icon('bell')}<span><strong class="code">${x.key}</strong> ${x.entry.label || ''}</span><span class="sub">${x.device.name}</span></button>`)}
+    ${codeHits.map(x => html`<button data-act="omniCode" data-code="${q}" data-id="${x.device.id}">${icon('bell')}<span><strong class="code">${x.key}</strong> ${x.block ? x.block.head : (x.entry.ai ? '' : x.entry.label || '')}</span><span class="sub">${x.device.name}</span></button>`)}
     ${evidence?.textHits ? html`<button data-act="omniCode" data-code="${q}">${icon('bell')}<span>Slå upp larmkoden <strong class="code">${q.toUpperCase()}</strong></span><span class="sub">Alla enheter</span></button>` : ''}
     ${hits.map(d => html`<a href="#enhet-${d.id}">${icon('cat-' + (CATS[d.category] ? d.category : 'other'))}<span>${d.name}</span><span class="sub">${d.dept || ''}</span></a>`)}
     ${!codeHits.length && !evidence?.textHits && q.length > 2 ? html`<button data-act="omniAsk">${icon('chat')}<span>Fråga manualerna: ”${trunc(q, 60)}”</span><span class="sub">Alla enheter</span></button>` : ''}
@@ -201,13 +201,14 @@ function cardTpl(d, m, card) {
   const c = contactsOf(d);
   return html`<div class="qcard" data-tour="qcard">
     <div class="qcard-head"><strong>${d.name}</strong><span class="badge ${card.status === 'approved' ? '' : 'draft'}">${card.status === 'approved' ? 'Granskat av ansvarig' : 'Utkast, ej granskat'}</span></div>
+    ${card.ocr ? html`<div class="ex-ocr" style="padding:8px 18px 0">${icon('info', 'ic-s')}Manualen har skannade sidor som är tolkade maskinellt (OCR). Jämför kortet med originalsidorna.</div>` : ''}
     <div class="qcard-body">
-      <section class="qsec"><h3>${icon('power')}Starta</h3>${card.uppstart.steg.length ? html`<ol>${card.uppstart.steg.map(s => html`<li>${s}</li>`)}</ol>` : html`<p class="muted small">Manualen saknar avsnitt om uppstart.</p>`}${cardSrc(m, card.uppstart, 'uppstart')}</section>
-      <section class="qsec"><h3>${icon('bell')}Vanliga larm</h3>${card.larm.length ? html`<table>${card.larm.map(a => html`<tr><td>${a.kod}</td><td><strong>${a.betyder}</strong><br>${a.gor}</td></tr>`)}</table>` : html`<p class="muted small">Manualen saknar larmkoder.</p>`}</section>
-      <section class="qsec"><h3>${icon('spray')}Rengöring</h3>${card.rengoring.steg.length ? html`<ol>${card.rengoring.steg.map(s => html`<li>${s}</li>`)}</ol>` : html`<p class="muted small">Manualen saknar avsnitt om rengöring.</p>`}${cardSrc(m, card.rengoring, 'rengoring')}</section>
-      <section class="qsec"><h3>${icon('warn')}Viktigt</h3><ul>${(card.viktigt || []).map(s => html`<li>${s}</li>`)}</ul>${c.mt.phone ? html`<p class="small mt8">Vid fel: ${c.mt.name || 'MT-jour'} <strong class="code">${c.mt.phone}</strong></p>` : ''}</section>
+      <section class="qsec"><h3>${icon('power')}Starta${card.uppstart.ocr ? html` <span class="ocr-tag">OCR</span>` : ''}</h3>${card.uppstart.steg.length ? html`<ol>${card.uppstart.steg.map(s => html`<li>${s}</li>`)}</ol>` : html`<p class="muted small">Manualen saknar avsnitt om uppstart.</p>`}${cardSrc(m, card.uppstart, 'uppstart')}</section>
+      <section class="qsec"><h3>${icon('bell')}Vanliga larm</h3>${card.larm.length ? html`<ul class="qlarm">${card.larm.map(a => html`<li><p>${a.betyder}</p>${a.sida ? html`<span class="qsrc-p">Manual sida ${a.sida}${a.ocr ? ', OCR' : ''}</span>` : ''}</li>`)}</ul>` : html`<p class="muted small">Manualen saknar larmkoder.</p>`}</section>
+      <section class="qsec"><h3>${icon('spray')}Rengöring${card.rengoring.ocr ? html` <span class="ocr-tag">OCR</span>` : ''}</h3>${card.rengoring.steg.length ? html`<ol>${card.rengoring.steg.map(s => html`<li>${s}</li>`)}</ol>` : html`<p class="muted small">Manualen saknar avsnitt om rengöring.</p>`}${cardSrc(m, card.rengoring, 'rengoring')}</section>
+      <section class="qsec"><h3>${icon('warn')}Viktigt</h3>${(card.viktigt || []).length ? html`<ul>${card.viktigt.map(s => html`<li>${s}</li>`)}</ul>` : html`<p class="muted small">Inga varningar hittades i avsnitten.</p>`}${c.mt.phone ? html`<p class="small mt8">Vid fel: ${c.mt.name || 'MT-jour'} <strong class="code">${c.mt.phone}</strong></p>` : ''}</section>
     </div>
-    <div class="qcard-foot">Bygger på ${m.title || 'bruksanvisningen'}, ${verLine(m)}. Snabbkortet ersätter inte bruksanvisningen.</div>
+    <div class="qcard-foot">Raderna är tagna ordagrant ur ${m.title || 'bruksanvisningen'}, ${verLine(m)}. Snabbkortet ersätter inte bruksanvisningen.</div>
   </div>`;
 }
 function cardPanel(d, m) {
@@ -218,9 +219,19 @@ function cardPanel(d, m) {
       ${aiReady() ? html`<button class="btn btn-primary" data-act="cardMake" data-id="${d.id}">${icon('spark')}Skapa snabbkort ur manualen</button>` : html`<p class="hint">${S.aiNote || 'AI-svar är inte tillgängliga i den här visningen.'}</p>`}</div>`;
   }
   const old = cardStale(card, m);
+  /* Ett kort från en tidigare version av Lotsa kan ha egna formuleringar. Det visas inte för
+     personalen och måste skapas om, så att kortet bara består av manualens rader. */
+  if (!card.verbatim) {
+    return html`<div class="empty"><h3 class="h3">Snabbkortet behöver skapas om</h3><p>Kortet är gjort med en tidigare version av ${BRAND} och innehåller formuleringar som inte är manualens egna. ${isAdmin() ? 'Skapa om kortet, så består det bara av rader ur manualen.' : 'En ansvarig behöver skapa om det. Fråga manualen under fliken Fråga under tiden.'}</p>
+      ${isAdmin() && aiReady() ? html`<button class="btn btn-primary" data-act="cardMake" data-id="${d.id}">${icon('spark')}Skapa om ur manualen</button>` : ''}</div>`;
+  }
+  /* Utkast har ingen granskat. Personalen ser dem inte. */
+  if (card.status !== 'approved' && !isAdmin()) {
+    return html`<div class="empty"><h3 class="h3">Snabbkortet granskas</h3><p>Kortet visas när en ansvarig har granskat det mot manualen. Fråga manualen under fliken Fråga under tiden.</p></div>`;
+  }
   return html`
     ${old ? html`<div class="notice warn" style="margin-bottom:14px">${icon('clock')}<div><strong>Kortet bygger på en äldre manual</strong>Kortet gjordes från ${card.version}. Manualen är nu ${m.version}. Skapa om kortet.</div></div>` : ''}
-    ${card.status !== 'approved' ? html`<div class="notice" style="margin-bottom:14px">${icon('info')}<div><strong>Utkast som väntar på granskning</strong>Kortet är skapat av AI ur manualen. MT eller en ansvarig ska granska det mot manualen innan det sätts upp eller används steg för steg.${['uppstart', 'rengoring'].filter(k => card[k] && card[k].steg && card[k].steg.length && card[k].verified === false).map(k => html`<br><strong>Citatet för ${k === 'uppstart' ? 'start' : 'rengöring'} hittades inte i manualen.</strong> Kontrollera stegen extra noga.`)}${isAdmin() ? html`<br><button class="btn btn-s btn-primary" data-act="cardApprove" data-id="${d.id}">${icon('check', 'ic-s')}Godkänn för utskrift</button>` : ''}</div></div>` : ''}
+    ${card.status !== 'approved' ? html`<div class="notice" style="margin-bottom:14px">${icon('info')}<div><strong>Utkast som väntar på granskning</strong>Kortet består av rader ur manualen, ordagrant. AI har bara valt ut vilka rader som kommer med. MT eller en ansvarig ska kontrollera att urvalet är rätt och komplett innan kortet sätts upp eller används steg för steg.${isAdmin() ? html`<br><button class="btn btn-s btn-primary" data-act="cardApprove" data-id="${d.id}">${icon('check', 'ic-s')}Godkänn för utskrift</button>` : ''}</div></div>` : ''}
     ${cardTpl(d, m, card)}
     <div class="rowflex mt14">
       <button class="btn btn-primary" data-act="cardPdf" data-id="${d.id}" ${card.status === 'approved' && !old ? '' : 'disabled'}>${icon('download')}Ladda ner för utskrift (PDF)</button>
@@ -234,14 +245,15 @@ ACT.cardSrc = async el => {
   if (!m || !m.card) return;
   const b = m.card[el.dataset.k], pages = await pagesOf(m);
   const v = b.citat ? strictQuote(pages, b.sida, b.citat) : { ok: false, page: b.sida };
-  openSource({ manualId: m.id, page: v.page || b.sida, range: v.range || null, section: b.avsnitt });
+  /* Rubriken är skriven av AI:n och visas inte i källvisaren. Bara sidan och det kontrollerade citatet. */
+  openSource({ manualId: m.id, page: v.page || b.sida, range: v.range || null });
 };
 ACT.cardSteps = el => {
   const d = deviceById(el.dataset.id), m = manualFor(d);
   /* Bara granskade snabbkort får visas steg för steg. */
-  if (!m || !m.card || m.card.status !== 'approved' || cardStale(m.card, m)) return;
+  if (!m || !m.card || !m.card.verbatim || m.card.status !== 'approved' || cardStale(m.card, m)) return;
   const b = m.card[el.dataset.k];
-  openSteps({ title: `${d.name}: ${el.dataset.k === 'uppstart' ? 'starta' : 'rengöring'}`, sub: `Ur snabbkortet, manual sida ${b.sida}`, steps: b.steg });
+  openSteps({ title: `${d.name}: ${el.dataset.k === 'uppstart' ? 'starta' : 'rengöring'}`, sub: `Ur snabbkortet, manual sida ${b.sida}${b.ocr ? ' (OCR, maskinellt tolkad sida)' : ''}`, steps: b.steg });
 };
 ACT.cardMake = async el => {
   const d = deviceById(el.dataset.id), m = manualFor(d);
@@ -268,7 +280,7 @@ ACT.cardApprove = async el => {
   /* Ett kort från en tidigare uppladdning av manualen får inte godkännas på den nya. */
   let now;
   try { now = await freshDoc(`manuals/${m.id}`); } catch (e) { toast('Manualen kunde inte kontrolleras just nu. Försök igen.', 'crit'); return; }
-  if (!now || !now.card || cardStale(now.card, now) || now.card.madeAt !== m.card.madeAt) { toast('Manualen eller kortet har ändrats. Skapa kortet igen innan det godkänns.', 'crit'); return; }
+  if (!now || !now.card || !now.card.verbatim || cardStale(now.card, now) || now.card.madeAt !== m.card.madeAt) { toast('Manualen eller kortet har ändrats. Skapa kortet igen innan det godkänns.', 'crit'); return; }
   await saveDoc('manuals', m.id, { card: { ...m.card, status: 'approved', approvedAt: Date.now(), approvedBy: S.uid || '' } });
   audit('card', d.id, 'Snabbkort godkänt för utskrift.');
   toast('Snabbkortet är godkänt.');
@@ -289,7 +301,7 @@ function alarmPanel(d, m) {
   </div>
   ${entries.length ? html`<section class="sect"><div class="sect-head"><h2 class="h2">Larmregister</h2></div>
     <div class="table-wrap"><table class="table regtable"><thead><tr><th>Kod</th><th>Larmtext</th><th>Prioritet</th><th class="r">Sida</th></tr></thead><tbody>
-    ${entries.map(([k, e]) => { const pr = prioOf(e.prio); return html`<tr><td>${k}</td><td>${e.label || e.betyder}${e.mt ? html` <span class="badge b-crit">Kontakta MT</span>` : ''}${e.ai ? html` <span class="badge">Tolkad av AI</span>` : ''}</td><td>${pr ? html`<span class="prio ${pr.cls}"><i></i>${pr.label.replace(' prioritet', '')}</span>` : ''}</td><td class="r num">${e.sida || ''}</td></tr>`; })}
+    ${entries.map(([k, e]) => { const pr = prioOf(e.prio); return html`<tr><td>${k}</td><td>${e.ai ? html`<span class="muted">Ej granskad post, se manualen sida ${e.sida || '?'}</span>` : (e.label || html`<span class="muted">Se manualen sida ${e.sida || '?'}</span>`)}${e.mt ? html` <span class="badge b-crit">Kontakta MT</span>` : ''}${e.ai ? html` <span class="badge">Tolkad av AI</span>` : ''}</td><td>${pr ? html`<span class="prio ${pr.cls}"><i></i>${pr.label.replace(' prioritet', '')}</span>` : ''}</td><td class="r num">${e.sida || ''}</td></tr>`; })}
     </tbody></table></div><p class="hint mt8">Registret fylls på när nya koder slås upp. Varje post pekar på sidan i manualen.</p></section>` : ''}`;
 }
 
@@ -362,7 +374,7 @@ INPUT.manualSearch = debounce(async el => {
       return { p, range };
     });
   }
-  setHTML(out, hits.length ? html`<p class="small muted">${hits.length} ${hits.length === 1 ? 'sida' : 'sidor'} med träff</p>${hits.slice(0, 10).map(h => html`<button class="fallback-hit" data-act="openPage" data-m="${m.id}" data-p="${h.p.n}" data-s="${h.range ? h.range.start : ''}" data-e="${h.range ? h.range.end : ''}"><strong>Sida ${h.p.n}</strong><span>${snippetAround(h.p.text, h.range, 220)}</span></button>`)}` : html`<p class="muted">Inga träffar på ”${q}”.</p>`);
+  setHTML(out, hits.length ? html`<p class="small muted">${hits.length} ${hits.length === 1 ? 'sida' : 'sidor'} med träff</p>${hits.slice(0, 10).map(h => html`<button class="fallback-hit" data-act="openPage" data-m="${m.id}" data-p="${h.p.n}" data-s="${h.range ? h.range.start : ''}" data-e="${h.range ? h.range.end : ''}"><strong>Sida ${h.p.n}${h.p.ocr ? html` <span class="ocr-tag">OCR</span>` : ''}</strong><span>${snippetAround(h.p.text, h.range, 220)}</span></button>`)}` : html`<p class="muted">Inga träffar på ”${q}”.</p>`);
 }, 160);
 
 /* QR och kontakt */
@@ -489,11 +501,12 @@ function drawNightOut() {
   }
   if (k === 'ask') { setHTML(out, html`<div class="chat-log" id="log-${d.id}"></div>`); renderLog(d.id); return; }
   /* Nattläget använder bara granskade snabbkort som gäller nuvarande manual. Annars frågas manualen. */
-  const cardOk = m.card && m.card.status === 'approved' && !cardStale(m.card, m);
+  const cardOk = m.card && m.card.verbatim && m.card.status === 'approved' && !cardStale(m.card, m);
   const b = cardOk && (k === 'start' ? m.card.uppstart : m.card.rengoring);
   if (b && b.steg && b.steg.length) {
     setHTML(out, html`<article class="msg-a"><div class="a-body"><ol>${b.steg.map(s => html`<li>${s}</li>`)}</ol></div>
-      <div class="a-meta"><span>Ur snabbkortet, manual sida ${b.sida} (${m.version || 'version saknas'}), granskat${m.card.approvedAt ? ' ' + fmtDate(m.card.approvedAt) : ''}</span></div>
+      ${(m.card.viktigt || []).length ? html`<div class="notice crit">${icon('warn')}<div><strong>Varningar ur manualen</strong>${m.card.viktigt.map(s => html`<span class="warnline">${s}</span>`)}</div></div>` : ''}
+      <div class="a-meta"><span>Ur snabbkortet, manual sida ${b.sida}${b.ocr ? ' (OCR, maskinellt tolkad)' : ''} (${m.version || 'version saknas'}), granskat${m.card.approvedAt ? ' ' + fmtDate(m.card.approvedAt) : ''}</span></div>
       <div class="a-actions"><button class="btn btn-primary" data-act="cardSteps" data-id="${d.id}" data-k="${k === 'start' ? 'uppstart' : 'rengoring'}">${icon('steps')}Steg för steg</button><button class="btn" data-act="cardSrc" data-m="${m.id}" data-k="${k === 'start' ? 'uppstart' : 'rengoring'}">${icon('book')}Visa i manualen</button>${aiReady() ? html`<button class="btn" data-act="nAI" data-k="${k}">Fråga efter fler detaljer</button>` : ''}</div></article>`);
     return;
   }

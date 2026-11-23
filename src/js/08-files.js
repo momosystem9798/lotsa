@@ -341,7 +341,11 @@ async function saveFile(filename, data, fallback) {
   }
 }
 /* jsPDF:s standardtypsnitt klarar Latin-1. Övriga tecken byts mot närmaste motsvarighet. */
-const pdfText = s => String(s ?? '').replace(/[–—−‑]/g, '-').replace(/[“”„]/g, '"').replace(/[‘’]/g, "'").replace(/…/g, '...').replace(/[•●]/g, '-').replace(/[   ]/g, ' ').replace(/[^\x00-\xff]/g, '');
+/* PDF-typsnittet klarar bara Latin-1. Tecken som bär betydelse skrivs om till motsvarande ASCII,
+   och text med andra tecken stoppas (pdfLossy) i stället för att tecknen tyst försvinner. */
+const pdfMap = s => String(s ?? '').replace(/[–—−‑]/g, '-').replace(/[“”„]/g, '"').replace(/[‘’]/g, "'").replace(/…/g, '...').replace(/[•●]/g, '-').replace(/[   ]/g, ' ').replace(/≤/g, '<=').replace(/≥/g, '>=').replace(/≠/g, '!=').replace(/≈/g, '~').replace(/→/g, '->').replace(/←/g, '<-').replace(/[\u200b-\u200d\ufeff]/g, '');
+const pdfText = s => pdfMap(s).replace(/[^\x00-\xff]/g, '');
+const pdfLossy = s => /[^\x00-\xff]/.test(pdfMap(s));
 async function newPdf(format, orientation) {
   await loadLib('jspdf');
   return new window.jspdf.jsPDF({ unit: 'mm', format, orientation });
@@ -361,9 +365,12 @@ function pdfLogo(doc, x, y, s) {
 ACT.cardPdf = async el => {
   const d = deviceById(el.dataset.id), m = manualFor(d);
   if (!m || !m.card) return;
+  if (!m.card.verbatim) { toast('Kortet behöver skapas om ur manualen innan det kan skrivas ut.', 'crit'); return; }
   if (m.card.status !== 'approved') { toast('Kortet kan skrivas ut när en ansvarig har godkänt det.'); return; }
   if (cardStale(m.card, m)) { toast('Kortet bygger på en äldre manual. Skapa och godkänn kortet igen.', 'crit'); return; }
   const card = m.card, c = contactsOf(d), url = deviceUrl(d), T = pdfText;
+  const allText = [...card.uppstart.steg, ...card.rengoring.steg, ...card.larm.map(a => a.betyder), ...(card.viktigt || [])];
+  if (allText.some(pdfLossy)) { toast('Kortet innehåller tecken som inte kan skrivas i PDF:en utan att ändra manualens text. Skriv ut kortet från webbläsaren i stället.', 'crit'); return; }
   el.disabled = true;
   try {
     const q = url ? await qrMatrix(url) : null;
@@ -381,29 +388,29 @@ ACT.cardPdf = async el => {
       let y = 33;
       const section = title => { doc.setTextColor(13, 43, 51); doc.setFont('helvetica', 'bold'); doc.setFontSize(fs + 1.6); doc.text(T(title), M, y); doc.setDrawColor(18, 112, 122); doc.setLineWidth(0.5); doc.line(M, y + 1.6, M + CW, y + 1.6); y += lh + 3.4; doc.setFontSize(fs); };
       const steps = arr => { arr.forEach((s, i) => { doc.setFont('helvetica', 'normal'); doc.setFontSize(fs); const lines = doc.splitTextToSize(T(s), CW - 7); doc.setFont('helvetica', 'bold'); doc.text(`${i + 1}.`, M, y); doc.setFont('helvetica', 'normal'); doc.text(lines, M + 7, y); y += lines.length * lh + 1.2; }); y += 3; };
-      if (card.uppstart.steg.length) { section('Starta'); steps(card.uppstart.steg); }
+      if (card.uppstart.steg.length) { section('Starta' + (card.uppstart.ocr ? ' (OCR)' : '')); steps(card.uppstart.steg); }
       if (card.larm.length) {
         section('Vanliga larm');
         card.larm.forEach(a => {
-          doc.setFont('courier', 'bold'); doc.setFontSize(fs); doc.text(T(a.kod), M, y);
-          doc.setFont('helvetica', 'bold'); const l1 = doc.splitTextToSize(T(a.betyder), CW - 30); doc.text(l1, M + 30, y); y += l1.length * lh;
-          doc.setFont('helvetica', 'normal'); const l2 = doc.splitTextToSize(T(a.gor), CW - 30); doc.text(l2, M + 30, y); y += l2.length * lh + 1.6;
+          /* Larmstycket ordagrant ur manualen, med sidan. */
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(fs); const l1 = doc.splitTextToSize(T(a.betyder + (a.sida ? `  (sida ${a.sida}${a.ocr ? ', OCR' : ''})` : '')), CW); doc.text(l1, M, y); y += l1.length * lh + 1.6;
         });
         y += 2.4;
       }
-      if (card.rengoring.steg.length) { section('Rengöring'); steps(card.rengoring.steg); }
+      if (card.rengoring.steg.length) { section('Rengöring' + (card.rengoring.ocr ? ' (OCR)' : '')); steps(card.rengoring.steg); }
       if ((card.viktigt || []).length) { section('Viktigt'); card.viktigt.forEach(s => { doc.setFont('helvetica', 'normal'); doc.setFontSize(fs); const lines = doc.splitTextToSize(T(s), CW - 5); doc.text('-', M, y); doc.text(lines, M + 5, y); y += lines.length * lh + 1.2; }); }
       return { doc, y };
     };
     let out = null;
     for (const fs of [10.5, 9.6, 8.8, 8, 7.2]) { out = await build(fs); if (out.y <= H - FOOT - 2) break; }
+    if (out.y > H - FOOT - 2) { toast('Kortet ryms inte på en sida i PDF:en utan att text klipps bort. Skriv ut kortet från webbläsaren i stället.', 'crit'); el.disabled = false; return; }
     const doc = out.doc, fy = H - FOOT;
     doc.setDrawColor(180, 195, 196); doc.setLineWidth(0.2); doc.line(M, fy, W - M, fy);
     if (q) pdfQR(doc, q, W - M - 26, fy + 3, 26);
     doc.setTextColor(13, 43, 51); doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
     if (c.mt.phone) doc.text(T(`Vid fel: ${c.mt.name || 'MT-jour'} ${c.mt.phone}`), M, fy + 7);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(7.4); doc.setTextColor(62, 89, 98);
-    const foot = doc.splitTextToSize(T(`Bygger på ${m.title || 'bruksanvisningen'}, ${verLine(m)}. ${card.status === 'approved' ? 'Granskat av ansvarig ' + fmtDate(card.approvedAt || Date.now()) + '.' : 'Utkast som inte är granskat.'} Snabbkortet ersätter inte bruksanvisningen. Kontrollera alltid mot gällande manual.${q ? ' Skanna koden för hela manualen, larmkoder och frågor.' : ''}`), CW - 32);
+    const foot = doc.splitTextToSize(T(`Raderna är tagna ordagrant ur ${m.title || 'bruksanvisningen'}, ${verLine(m)}. ${card.status === 'approved' ? 'Granskat av ansvarig ' + fmtDate(card.approvedAt || Date.now()) + '.' : 'Utkast som inte är granskat.'} Snabbkortet ersätter inte bruksanvisningen. Kontrollera alltid mot gällande manual.${q ? ' Skanna koden för hela manualen, larmkoder och frågor.' : ''}`), CW - 32);
     doc.text(foot, M, fy + 12.5);
     doc.setFontSize(7); doc.text(T(`${BRAND}, utskrivet ${dayKey()}`), M, H - 6);
     await saveFile(`Snabbkort ${slug(d.name)}.pdf`, doc.output('blob'));

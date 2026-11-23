@@ -146,7 +146,7 @@ const looksLikeCode = s => {
 function codeRegex(code, flags = 'i') {
   const parts = canonCode(code).match(/[A-ZÅÄÖ]+|\d+/g) || [];
   if (!parts.length) return /$^/;
-  const pattern = parts.map(p => /^\d/.test(p) ? '0*' + p : p).join('[\\s\\-.:]{0,2}');
+  const pattern = parts.map(p => /^\d/.test(p) ? '0*' + p : p).join('[\\s\\-‑–.:]{0,2}');
   return new RegExp('(^|[^\\p{L}\\p{N}])(' + pattern + ')(?![\\p{L}\\p{N}])', flags.includes('u') ? flags : flags + 'u');
 }
 function matchAlarm(alarms, code) {
@@ -167,18 +167,26 @@ function matchAlarm(alarms, code) {
   }
   return null;
 }
-const CODE_LINE = /^(?:[A-Z]{1,4}[-\s]?\d{1,4}[A-Z]?|Err\s?\d{1,3})(?=[\s:–-])/;
+const CODE_LINE = /^(?:[A-Z]{1,4}[-‑–\s]?\d{1,4}[A-Z]?|Err\s?\d{1,3}|(?:Alarm|ALARM|Larm|Error|ERROR|Fel|Fault|FAULT|Code|CODE|Kod)\s?\d{1,4})(?=[\s:–‑-]|$)/;
+/* En kort kod (E-23, Err 11, E-90 till E-99) som mönster för radens början, med teckengräns. */
+function alarmCodeRe(code) {
+  const ls = String(code || '').trim();
+  if (!/^[\p{L}\p{N}][\p{L}\p{N}\s\-–‑]{0,15}$/u.test(ls)) return null;
+  return new RegExp('^' + ls.split(/[\s\-–‑]+/).map(x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\s\\-–‑]*') + '(?![\\p{L}\\p{N}])(?![\\-–‑.]\\p{N})', 'iu');
+}
 /* Hela stycket i manualen som hör till en larmkod: från kodraden till nästa kodrad eller tom rad följd av rubrik. */
 function alarmBlock(pageText, lineStart) {
   const lines = pageText.split('\n');
   let pos = 0, start = -1, end = pageText.length;
   const want = normMap(lineStart, true).s;
   if (!want) return null;
+  /* En kort kod (E-23) jämförs mot radens början med teckengräns, så att E-23 inte träffar E-23A. */
+  const codeRe = alarmCodeRe(lineStart);
   for (let i = 0; i < lines.length; i++) {
     const ln = lines[i];
     if (start < 0) {
       const s = normMap(ln, true).s;
-      if (s.startsWith(want) && !(/\d$/.test(want) && /\d/.test(s[want.length] || ''))) start = pos;
+      if (codeRe ? codeRe.test(ln.trim()) : (s.startsWith(want) && !(/\d$/.test(want) && /\d/.test(s[want.length] || '')))) start = pos;
     } else if (CODE_LINE.test(ln.trim()) || /^\d+(\.\d+)*\s+\S/.test(ln.trim())) { end = pos; break; }
     pos += ln.length + 1;
   }
@@ -230,37 +238,4 @@ function maskPNR(text) {
   return { text: out, count };
 }
 
-/* ----- Svarstext till HTML: numrerade steg, punktlistor, fetstil och källmarkörer ----- */
-function inlineFmt(s, mid) {
-  let out = esc(s).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  out = out.replace(/\[(\d{1,2})\]/g, (_, n) => (mid ? `<button class="cite" data-act="cite" data-mid="${esc(mid)}" data-n="${n}" aria-label="Källa ${n}">${n}</button>` : `<span class="cite">${n}</span>`));
-  return out;
-}
-function renderAnswer(text, mid) {
-  const lines = String(text || '').replace(/\r/g, '').split('\n');
-  let out = '', list = null;
-  const close = () => { if (list) { out += `</${list}>`; list = null; } };
-  for (const ln of lines) {
-    const t = ln.trim();
-    if (!t) { close(); continue; }
-    let m;
-    if ((m = t.match(/^(\d{1,2})[.)]\s+(.*)$/))) {
-      if (list !== 'ol') { close(); out += '<ol>'; list = 'ol'; }
-      out += `<li>${inlineFmt(m[2], mid)}</li>`;
-    } else if ((m = t.match(/^[-•*]\s+(.*)$/))) {
-      if (list !== 'ul') { close(); out += '<ul>'; list = 'ul'; }
-      out += `<li>${inlineFmt(m[1], mid)}</li>`;
-    } else { close(); out += `<p>${inlineFmt(t, mid)}</p>`; }
-  }
-  close();
-  return raw(out);
-}
-function parseSteps(text) {
-  const steps = [];
-  for (const ln of String(text || '').split('\n')) {
-    const m = ln.trim().match(/^(\d{1,2})[.)]\s+(.*)$/);
-    if (m) steps.push(m[2].replace(/\s*\[\d{1,2}\]/g, '').replace(/\*\*/g, '').trim());
-  }
-  return steps;
-}
 const plainAnswer = text => String(text || '').replace(/\s*\[\d{1,2}\]/g, '').replace(/\*\*/g, '');
